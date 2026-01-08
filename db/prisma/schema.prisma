@@ -54,6 +54,8 @@ model Question {
   mcqOptions  McqOption[]
   contests    ContestQuestion[]
   submissions Submission[]
+
+  @@index([type])
 }
 
 model McqOption {
@@ -91,6 +93,9 @@ model ContestQuestion {
   orderIndex  Int
   points      Int
   timeLimit   Int
+
+  @@unique([contestId, questionId])
+  @@index([contestId])
 }
 
 model ContestParticipant {
@@ -102,6 +107,8 @@ model ContestParticipant {
   userId    String
 
   joinedAt  DateTime @default(now())
+
+  @@unique([contestId, userId])
 }
 
 model Submission {
@@ -118,6 +125,9 @@ model Submission {
   selectedOptionId String?
   isCorrect        Boolean
   submittedAt      DateTime @default(now())
+
+  @@unique([userId, contestId, questionId])
+  @@index([contestId])
 }
 
 model LeaderboardSnapshot {
@@ -130,4 +140,6 @@ model LeaderboardSnapshot {
 
   score     Int
   rank      Int
+
+  @@index([contestId, rank])
 }
