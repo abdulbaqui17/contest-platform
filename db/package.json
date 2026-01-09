@@ -2,9 +2,18 @@
   "dependencies": {
     "@prisma/adapter-pg": "^7.2.0",
     "@prisma/client": "^7.2.0",
-    "pg": "^8.16.3"
+    "pg": "^8.16.3",
+    "dotenv": "^16.4.5"
   },
   "devDependencies": {
-    "prisma": "^7.2.0"
+    "prisma": "^7.2.0",
+    "@types/node": "^22.10.5",
+    "@types/bun": "latest"
+  },
+  "name": "db",
+  "module": "index.ts",
+  "type": "module",
+  "peerDependencies": {
+    "typescript": "^5.0.0"
   }
 }
