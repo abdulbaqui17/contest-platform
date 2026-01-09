@@ -1,6 +1,4 @@
 import { Router } from "express";
-import { z } from "zod";
-import prisma from "../../db/db";
 
 const router = Router();
 
