@@ -20,12 +20,20 @@ export class ContestWebSocketService {
       return;
     }
 
-    const wsUrl = `ws://localhost:3000/ws/contest?token=${token}&contestId=${this.contestId}&role=ADMIN`;
+    const wsUrl = `ws://localhost:3000/ws/contest?token=${token}`;
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
       console.log('WebSocket connected');
       this.reconnectAttempts = 0;
+      
+      // Send join_contest event
+      this.send({
+        event: 'join_contest',
+        data: {
+          contestId: this.contestId
+        }
+      });
     };
 
     this.ws.onmessage = (event) => {
@@ -53,6 +61,12 @@ export class ContestWebSocketService {
     if (this.ws) {
       this.ws.close(1000, 'Admin disconnecting');
       this.ws = null;
+    }
+  }
+
+  send(message: any): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(message));
     }
   }
 

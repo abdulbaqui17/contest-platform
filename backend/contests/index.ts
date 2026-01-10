@@ -1,15 +1,39 @@
 import { Router } from "express";
+import { prisma } from "../../db/prismaClient";
 
 const router = Router();
 
 // GET /contests - List all contests (active, upcoming, past)
 router.get("/", async (req, res) => {
   try {
-    // Implementation will fetch all contests
-    // Returns array of contest summaries with status
-    res.json([]);
+    const contests = await prisma.contest.findMany({
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(contests);
   } catch (error) {
     console.error("Get contests error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /contests - Create new contest
+router.post("/", async (req, res) => {
+  try {
+    const { title, description, startAt, endAt } = req.body;
+    
+    const contest = await prisma.contest.create({
+      data: {
+        title,
+        description,
+        startAt: new Date(startAt),
+        endAt: new Date(endAt),
+        status: "DRAFT"
+      }
+    });
+    
+    res.status(201).json(contest);
+  } catch (error) {
+    console.error("Create contest error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -19,10 +43,34 @@ router.get("/:contestId", async (req, res) => {
   try {
     const { contestId } = req.params;
     
-    // Implementation will fetch contest by ID with questions
-    // Returns contest metadata, status, and questions list
+    const contest = await prisma.contest.findUnique({
+      where: { id: contestId },
+      include: {
+        questions: {
+          include: {
+            question: true
+          },
+          orderBy: { orderIndex: 'asc' }
+        }
+      }
+    });
     
-    res.json({});
+    if (!contest) {
+      return res.status(404).json({ error: "Contest not found" });
+    }
+    
+    const formattedContest = {
+      ...contest,
+      questions: contest.questions.map(cq => ({
+        id: cq.questionId,
+        title: cq.question.title,
+        orderIndex: cq.orderIndex,
+        points: cq.points,
+        timeLimit: cq.timeLimit
+      }))
+    };
+    
+    res.json(formattedContest);
   } catch (error) {
     console.error("Get contest error:", error);
     res.status(500).json({ error: "Internal server error" });

@@ -1,5 +1,10 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Landing from './pages/Landing';
+import Signin from './pages/Signin';
+import Signup from './pages/Signup';
 import Login from './pages/Login';
+import UserContests from './pages/UserContests';
+import PlayContest from './pages/PlayContest';
 import Contests from './pages/Contests';
 import CreateContest from './pages/CreateContest';
 import ContestDetail from './pages/ContestDetail';
@@ -11,6 +16,11 @@ function App() {
   return (
     <Router>
       <Routes>
+        <Route path="/" element={<Landing />} />
+        <Route path="/signin" element={<Signin />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/contests" element={<UserContests />} />
+        <Route path="/contest/:id/play" element={<PlayContest />} />
         <Route path="/admin/login" element={<Login />} />
         <Route path="/admin/contests" element={<ProtectedRoute><Contests /></ProtectedRoute>} />
         <Route path="/admin/contests/new" element={<ProtectedRoute><CreateContest /></ProtectedRoute>} />

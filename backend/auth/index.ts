@@ -1,6 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
 import { SignupRequestSchema, SigninRequestSchema } from "../schemas";
+import { prisma } from "../../db/prismaClient";
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
 
 const router = Router();
 
@@ -10,22 +13,45 @@ router.post("/signup", async (req, res) => {
     // Validate input with Zod
     const validatedData = SignupRequestSchema.parse(req.body);
     
-    // TODO: Implement user creation logic
-    // - Check if user already exists
-    // - Hash password
-    // - Create user in database
-    // - Generate JWT token
+    // Check if user already exists
+    const existingUser = await prisma.user.findUnique({
+      where: { email: validatedData.email }
+    });
+
+    if (existingUser) {
+      return res.status(400).json({ error: "Email already registered" });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(validatedData.password, 10);
+
+    // Create user in database
+    const user = await prisma.user.create({
+      data: {
+        name: validatedData.name,
+        email: validatedData.email,
+        password: hashedPassword,
+        role: "USER"
+      }
+    });
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { userId: user.id, role: user.role },
+      process.env.JWT_SECRET!,
+      { expiresIn: "24h" }
+    );
     
     res.status(201).json({
       message: "User created successfully",
       user: {
-        id: "mock-user-id",
-        name: validatedData.name,
-        email: validatedData.email,
-        role: "USER",
-        createdAt: new Date().toISOString()
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        createdAt: user.createdAt.toISOString()
       },
-      token: "mock-jwt-token"
+      token
     });
 
   } catch (error) {
@@ -44,20 +70,38 @@ router.post("/signin", async (req, res) => {
     // Validate input with Zod
     const validatedData = SigninRequestSchema.parse(req.body);
     
-    // TODO: Implement user authentication logic
-    // - Find user by email
-    // - Verify password
-    // - Generate JWT token
+    // Find user by email
+    const user = await prisma.user.findUnique({
+      where: { email: validatedData.email }
+    });
+
+    if (!user) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    // Verify password
+    const isValidPassword = await bcrypt.compare(validatedData.password, user.password);
+    
+    if (!isValidPassword) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { userId: user.id, role: user.role },
+      process.env.JWT_SECRET!,
+      { expiresIn: "24h" }
+    );
     
     res.json({
       message: "Signin successful",
       user: {
-        id: "mock-user-id",
-        name: "Mock User",
-        email: validatedData.email,
-        role: "USER"
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role
       },
-      token: "mock-jwt-token"
+      token
     });
 
   } catch (error) {

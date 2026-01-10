@@ -6,11 +6,13 @@ import contestRoutes from "./contests";
 import { ContestWebSocketServer } from "./websocket/server";
 import {
   MockContestService,
-  MockSubmissionService,
   MockTimerService,
 } from "./services/mocks";
 import { RedisLeaderboardService } from "./services/leaderboard.service";
+import { PrismaSubmissionService } from "./services/submission.service";
+import { ContestOrchestrator } from "./services/contest.orchestrator";
 import { redis } from "./redis";
+import { prisma } from "../db/prismaClient";
 
 const app = express();
 const server = createServer(app);
@@ -24,8 +26,8 @@ app.use("/leaderboard", contestRoutes);
 
 // Initialize services
 const contestService = new MockContestService();
-const submissionService = new MockSubmissionService();
 const leaderboardService = new RedisLeaderboardService(redis);
+const submissionService = new PrismaSubmissionService(leaderboardService);
 const timerService = new MockTimerService();
 
 const wsServer = new ContestWebSocketServer(
@@ -36,6 +38,26 @@ const wsServer = new ContestWebSocketServer(
 );
 
 wsServer.initialize();
+
+// Initialize ContestOrchestrator
+const orchestrator = new ContestOrchestrator(
+  contestService,
+  leaderboardService,
+  wsServer
+);
+
+// Auto-start ACTIVE contests on server boot
+(async () => {
+  const activeContests = await prisma.contest.findMany({
+    where: { status: "ACTIVE" },
+    select: { id: true },
+  });
+  
+  for (const contest of activeContests) {
+    await orchestrator.startContest(contest.id);
+    console.log(`Started active contest: ${contest.id}`);
+  }
+})();
 
 // Handle WebSocket upgrade requests
 server.on("upgrade", (request, socket, head) => {

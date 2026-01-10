@@ -30,6 +30,11 @@ export const authAPI = {
     const response = await api.post('/auth/signin', data);
     return response.data;
   },
+
+  signup: async (data: { name: string; email: string; password: string }): Promise<AuthResponse> => {
+    const response = await api.post('/auth/signup', data);
+    return response.data;
+  },
 };
 
 // Contests API
@@ -45,7 +50,12 @@ export const contestsAPI = {
   },
 
   getById: async (id: string): Promise<ContestDetail> => {
-    const response = await api.get(`/contests/${id}`);
+    const response = await api.get(`/contest/${id}`);
+    return response.data;
+  },
+
+  join: async (contestId: string): Promise<{ message: string }> => {
+    const response = await api.post(`/contest/${contestId}/join`);
     return response.data;
   },
 };
