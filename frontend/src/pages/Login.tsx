@@ -36,42 +36,47 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div style={{ maxWidth: '400px', margin: '50px auto', padding: '20px' }}>
-      <h2>Admin Login</h2>
-      <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: '15px' }}>
-          <label htmlFor="email">Email:</label>
-          <input
-            type="email"
-            id="email"
-            name="email"
-            value={formData.email}
-            onChange={handleChange}
-            required
-            style={{ width: '100%', padding: '8px', marginTop: '5px' }}
-          />
-        </div>
-        <div style={{ marginBottom: '15px' }}>
-          <label htmlFor="password">Password:</label>
-          <input
-            type="password"
-            id="password"
-            name="password"
-            value={formData.password}
-            onChange={handleChange}
-            required
-            style={{ width: '100%', padding: '8px', marginTop: '5px' }}
-          />
-        </div>
-        {error && <div style={{ color: 'red', marginBottom: '15px' }}>{error}</div>}
-        <button
-          type="submit"
-          disabled={loading}
-          style={{ width: '100%', padding: '10px', backgroundColor: '#007bff', color: 'white', border: 'none' }}
-        >
-          {loading ? 'Logging in...' : 'Login'}
-        </button>
-      </form>
+    <div className="container-sm" style={{ paddingTop: '4rem' }}>
+      <div className="card" style={{ maxWidth: '500px', margin: '0 auto' }}>
+        <h2 style={{ textAlign: 'center', marginBottom: 'var(--spacing-xl)' }}>Admin Login</h2>
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label htmlFor="email" className="form-label">Email</label>
+            <input
+              type="email"
+              id="email"
+              name="email"
+              value={formData.email}
+              onChange={handleChange}
+              required
+              className="form-input"
+              placeholder="admin@example.com"
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="password" className="form-label">Password</label>
+            <input
+              type="password"
+              id="password"
+              name="password"
+              value={formData.password}
+              onChange={handleChange}
+              required
+              className="form-input"
+              placeholder="Enter admin password"
+            />
+          </div>
+          {error && <div className="error-message">{error}</div>}
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn btn-primary btn-lg"
+            style={{ width: '100%' }}
+          >
+            {loading ? 'Logging in...' : 'Login as Admin'}
+          </button>
+        </form>
+      </div>
     </div>
   );
 };

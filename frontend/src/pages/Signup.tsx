@@ -36,56 +36,62 @@ const Signup: React.FC = () => {
   };
 
   return (
-    <div style={{ maxWidth: '400px', margin: '50px auto', padding: '20px' }}>
-      <h2>Sign Up</h2>
-      <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: '15px' }}>
-          <label htmlFor="name">Name:</label>
-          <input
-            type="text"
-            id="name"
-            name="name"
-            value={formData.name}
-            onChange={handleChange}
-            required
-            style={{ width: '100%', padding: '8px', marginTop: '5px' }}
-          />
+    <div className="container-sm" style={{ paddingTop: '4rem' }}>
+      <div className="card" style={{ maxWidth: '500px', margin: '0 auto' }}>
+        <h2 style={{ textAlign: 'center', marginBottom: 'var(--spacing-xl)' }}>Create Account</h2>
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label htmlFor="name" className="form-label">Full Name</label>
+            <input
+              type="text"
+              id="name"
+              name="name"
+              value={formData.name}
+              onChange={handleChange}
+              required
+              className="form-input"
+              placeholder="John Doe"
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="email" className="form-label">Email</label>
+            <input
+              type="email"
+              id="email"
+              name="email"
+              value={formData.email}
+              onChange={handleChange}
+              required
+              className="form-input"
+              placeholder="you@example.com"
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="password" className="form-label">Password</label>
+            <input
+              type="password"
+              id="password"
+              name="password"
+              value={formData.password}
+              onChange={handleChange}
+              required
+              className="form-input"
+              placeholder="Minimum 6 characters"
+            />
+          </div>
+          {error && <div className="error-message">{error}</div>}
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn btn-primary btn-lg"
+            style={{ width: '100%' }}
+          >
+            {loading ? 'Creating account...' : 'Sign Up'}
+          </button>
+        </form>
+        <div style={{ marginTop: 'var(--spacing-xl)', textAlign: 'center', color: 'var(--text-secondary)' }}>
+          Already have an account? <Link to="/signin" style={{ color: 'var(--accent-primary)' }}>Sign In</Link>
         </div>
-        <div style={{ marginBottom: '15px' }}>
-          <label htmlFor="email">Email:</label>
-          <input
-            type="email"
-            id="email"
-            name="email"
-            value={formData.email}
-            onChange={handleChange}
-            required
-            style={{ width: '100%', padding: '8px', marginTop: '5px' }}
-          />
-        </div>
-        <div style={{ marginBottom: '15px' }}>
-          <label htmlFor="password">Password:</label>
-          <input
-            type="password"
-            id="password"
-            name="password"
-            value={formData.password}
-            onChange={handleChange}
-            required
-            style={{ width: '100%', padding: '8px', marginTop: '5px' }}
-          />
-        </div>
-        {error && <div style={{ color: 'red', marginBottom: '15px' }}>{error}</div>}
-        <button
-          type="submit"
-          disabled={loading}
-          style={{ width: '100%', padding: '10px', backgroundColor: '#667eea', color: 'white', border: 'none', borderRadius: '4px' }}
-        >
-          {loading ? 'Creating account...' : 'Sign Up'}
-        </button>
-      </form>
-      <div style={{ marginTop: '20px', textAlign: 'center' }}>
-        Already have an account? <Link to="/signin">Sign In</Link>
       </div>
     </div>
   );

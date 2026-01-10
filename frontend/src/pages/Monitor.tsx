@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { ContestWebSocketService } from '../services/websocket';
-import { WebSocketEvent, LeaderboardUpdateEvent, QuestionBroadcastEvent, TimerUpdateEvent } from '../types';
+import { WebSocketEvent, LeaderboardUpdateEvent, QuestionBroadcastEvent } from '../types';
 
 const Monitor: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -10,7 +10,6 @@ const Monitor: React.FC = () => {
   const [leaderboard, setLeaderboard] = useState<LeaderboardUpdateEvent['data']['topN']>([]);
   const [totalParticipants, setTotalParticipants] = useState(0);
   const [submissionCount, setSubmissionCount] = useState(0);
-  const [wsService, setWsService] = useState<ContestWebSocketService | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -23,7 +22,6 @@ const Monitor: React.FC = () => {
     );
 
     service.connect();
-    setWsService(service);
 
     return () => {
       service.disconnect();

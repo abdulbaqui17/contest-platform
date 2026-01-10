@@ -10,6 +10,8 @@ import CreateContest from './pages/CreateContest';
 import ContestDetail from './pages/ContestDetail';
 import Questions from './pages/Questions';
 import Monitor from './pages/Monitor';
+import ImportQuestion from './pages/ImportQuestion';
+import CreateQuestion from './pages/CreateQuestion';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
@@ -27,6 +29,8 @@ function App() {
         <Route path="/admin/contests/:id" element={<ProtectedRoute><ContestDetail /></ProtectedRoute>} />
         <Route path="/admin/contests/:id/questions" element={<ProtectedRoute><Questions /></ProtectedRoute>} />
         <Route path="/admin/contests/:id/monitor" element={<ProtectedRoute><Monitor /></ProtectedRoute>} />
+        <Route path="/admin/questions/import" element={<ProtectedRoute><ImportQuestion /></ProtectedRoute>} />
+        <Route path="/admin/questions/new" element={<ProtectedRoute><CreateQuestion /></ProtectedRoute>} />
       </Routes>
     </Router>
   );

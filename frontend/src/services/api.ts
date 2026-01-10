@@ -9,7 +9,8 @@ import {
   CreateQuestionRequest,
 } from '../types';
 
-const API_BASE_URL = 'http://localhost:3000'; // Adjust as needed
+// Use environment variable for API base URL (configured at build time)
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
 
 const api = axios.create({
   baseURL: API_BASE_URL,

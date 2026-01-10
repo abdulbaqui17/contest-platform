@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
+import cors from "cors";
 import authRoutes from "./auth";
 import contestRoutes from "./contests";
 import { ContestWebSocketServer } from "./websocket/server";
@@ -17,12 +18,23 @@ import { prisma } from "../db/prismaClient";
 const app = express();
 const server = createServer(app);
 
+// Enable CORS for all origins in development (configure for production)
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || "*",
+  credentials: true,
+}));
+
 app.use(express.json());
 
 app.use("/auth", authRoutes);
 app.use("/contests", contestRoutes);
 app.use("/contest", contestRoutes);
 app.use("/leaderboard", contestRoutes);
+
+// Health check endpoint for Docker
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
 
 // Initialize services
 const contestService = new MockContestService();

@@ -31,62 +31,129 @@ const UserContests: React.FC = () => {
       await contestsAPI.join(contestId);
       navigate(`/contest/${contestId}/play`);
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to join contest');
+      setError(err.response?.data?.error || 'Failed to join contest');
       setJoining(null);
     }
   };
 
-  if (loading) return <div style={{ padding: '20px' }}>Loading contests...</div>;
-  if (error) return <div style={{ padding: '20px', color: 'red' }}>Error: {error}</div>;
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    navigate('/');
+  };
+
+  const activeContests = contests.filter(c => c.status === 'ACTIVE');
+  const pastContests = contests.filter(c => c.status !== 'ACTIVE');
+
+  if (loading) {
+    return (
+      <div className="loading">
+        <div className="spinner"></div>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
-      <h2>Available Contests</h2>
-      <div style={{ display: 'grid', gap: '20px', marginTop: '20px' }}>
-        {contests.map((contest) => (
-          <div key={contest.id} style={{ 
-            border: '1px solid #ddd', 
-            padding: '20px', 
-            borderRadius: '8px',
-            backgroundColor: contest.status === 'ACTIVE' ? '#f0fff4' : '#fff'
-          }}>
-            <h3>{contest.title}</h3>
-            <p>{contest.description}</p>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '15px' }}>
-              <div>
-                <span style={{ 
-                  padding: '4px 12px', 
-                  borderRadius: '4px',
-                  backgroundColor: contest.status === 'ACTIVE' ? '#48bb78' : '#cbd5e0',
-                  color: 'white',
-                  fontSize: '12px'
-                }}>
-                  {contest.status}
-                </span>
-                <div style={{ fontSize: '14px', marginTop: '8px', color: '#666' }}>
-                  {new Date(contest.startAt).toLocaleString()}
+    <div className="container">
+      <div className="page-header">
+        <h1 className="page-title">Contests</h1>
+        <button onClick={handleLogout} className="btn btn-secondary">
+          Logout
+        </button>
+      </div>
+
+      {error && (
+        <div className="error-message">
+          {error}
+        </div>
+      )}
+
+      {/* Active Contests Section */}
+      <div className="mb-lg">
+        <h2 style={{ marginBottom: 'var(--spacing-lg)', color: 'var(--text-primary)' }}>
+          Active Contests
+        </h2>
+        {activeContests.length === 0 ? (
+          <div className="card text-center">
+            <p style={{ color: 'var(--text-secondary)' }}>
+              No active contests at the moment. Check back soon!
+            </p>
+          </div>
+        ) : (
+          <div className="grid">
+            {activeContests.map((contest) => (
+              <div key={contest.id} className="card">
+                <div className="flex-between">
+                  <div style={{ flex: 1 }}>
+                    <div className="flex gap-md mb-sm" style={{ alignItems: 'center' }}>
+                      <h3 className="card-title" style={{ marginBottom: 0 }}>
+                        {contest.title}
+                      </h3>
+                      <span className="badge badge-active">Active</span>
+                    </div>
+                    <p className="card-description" style={{ marginBottom: 'var(--spacing-md)' }}>
+                      {contest.description}
+                    </p>
+                    <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+                      Started: {new Date(contest.startAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => handleJoin(contest.id)}
+                    disabled={joining === contest.id}
+                    className="btn btn-success btn-lg"
+                    style={{ marginLeft: 'var(--spacing-lg)' }}
+                  >
+                    {joining === contest.id ? 'Joining...' : 'Attempt'}
+                  </button>
                 </div>
               </div>
-              {contest.status === 'ACTIVE' && (
-                <button
-                  onClick={() => handleJoin(contest.id)}
-                  disabled={joining === contest.id}
-                  style={{
-                    padding: '10px 24px',
-                    backgroundColor: '#667eea',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: joining === contest.id ? 'not-allowed' : 'pointer',
-                    opacity: joining === contest.id ? 0.6 : 1
-                  }}
-                >
-                  {joining === contest.id ? 'Joining...' : 'Join Contest'}
-                </button>
-              )}
-            </div>
+            ))}
           </div>
-        ))}
+        )}
+      </div>
+
+      {/* Past Contests Section */}
+      <div>
+        <h2 style={{ marginBottom: 'var(--spacing-lg)', color: 'var(--text-primary)' }}>
+          Past Contests
+        </h2>
+        {pastContests.length === 0 ? (
+          <div className="card text-center">
+            <p style={{ color: 'var(--text-secondary)' }}>
+              No past contests available
+            </p>
+          </div>
+        ) : (
+          <div className="grid">
+            {pastContests.map((contest) => (
+              <div key={contest.id} className="card">
+                <div className="flex-between">
+                  <div style={{ flex: 1 }}>
+                    <div className="flex gap-md mb-sm" style={{ alignItems: 'center' }}>
+                      <h3 className="card-title" style={{ marginBottom: 0 }}>
+                        {contest.title}
+                      </h3>
+                      <span className="badge badge-past">{contest.status}</span>
+                    </div>
+                    <p className="card-description" style={{ marginBottom: 'var(--spacing-md)' }}>
+                      {contest.description}
+                    </p>
+                    <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+                      Ended: {new Date(contest.endAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <button
+                    className="btn btn-secondary"
+                    style={{ marginLeft: 'var(--spacing-lg)' }}
+                    disabled
+                  >
+                    View Leaderboard
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
