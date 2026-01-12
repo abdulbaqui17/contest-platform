@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { contestsAPI } from '../services/api';
 import { ContestSummary } from '../types';
+import { Button } from '../components/ui/button';
+import { Card, CardContent, CardDescription, CardTitle } from '../components/ui/card';
+import { Badge } from '../components/ui/badge';
+import { LogOut, Trophy, Play } from 'lucide-react';
 
 const UserContests: React.FC = () => {
   const [contests, setContests] = useState<ContestSummary[]>([]);
@@ -46,114 +50,118 @@ const UserContests: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="loading">
-        <div className="spinner"></div>
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-8 w-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-zinc-400">Loading contests...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="container">
-      <div className="page-header">
-        <h1 className="page-title">Contests</h1>
-        <button onClick={handleLogout} className="btn btn-secondary">
-          Logout
-        </button>
-      </div>
-
-      {error && (
-        <div className="error-message">
-          {error}
+    <div className="min-h-screen bg-zinc-950">
+      <div className="max-w-5xl mx-auto px-6 py-8">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <h1 className="text-3xl font-bold text-zinc-100">Contests</h1>
+          <Button variant="secondary" onClick={handleLogout}>
+            <LogOut className="h-4 w-4 mr-2" />
+            Logout
+          </Button>
         </div>
-      )}
 
-      {/* Active Contests Section */}
-      <div className="mb-lg">
-        <h2 style={{ marginBottom: 'var(--spacing-lg)', color: 'var(--text-primary)' }}>
-          Active Contests
-        </h2>
-        {activeContests.length === 0 ? (
-          <div className="card text-center">
-            <p style={{ color: 'var(--text-secondary)' }}>
-              No active contests at the moment. Check back soon!
-            </p>
-          </div>
-        ) : (
-          <div className="grid">
-            {activeContests.map((contest) => (
-              <div key={contest.id} className="card">
-                <div className="flex-between">
-                  <div style={{ flex: 1 }}>
-                    <div className="flex gap-md mb-sm" style={{ alignItems: 'center' }}>
-                      <h3 className="card-title" style={{ marginBottom: 0 }}>
-                        {contest.title}
-                      </h3>
-                      <span className="badge badge-active">Active</span>
-                    </div>
-                    <p className="card-description" style={{ marginBottom: 'var(--spacing-md)' }}>
-                      {contest.description}
-                    </p>
-                    <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-                      Started: {new Date(contest.startAt).toLocaleString()}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => handleJoin(contest.id)}
-                    disabled={joining === contest.id}
-                    className="btn btn-success btn-lg"
-                    style={{ marginLeft: 'var(--spacing-lg)' }}
-                  >
-                    {joining === contest.id ? 'Joining...' : 'Attempt'}
-                  </button>
-                </div>
-              </div>
-            ))}
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4 text-red-400 mb-6">
+            {error}
           </div>
         )}
-      </div>
 
-      {/* Past Contests Section */}
-      <div>
-        <h2 style={{ marginBottom: 'var(--spacing-lg)', color: 'var(--text-primary)' }}>
-          Past Contests
-        </h2>
-        {pastContests.length === 0 ? (
-          <div className="card text-center">
-            <p style={{ color: 'var(--text-secondary)' }}>
-              No past contests available
-            </p>
-          </div>
-        ) : (
-          <div className="grid">
-            {pastContests.map((contest) => (
-              <div key={contest.id} className="card">
-                <div className="flex-between">
-                  <div style={{ flex: 1 }}>
-                    <div className="flex gap-md mb-sm" style={{ alignItems: 'center' }}>
-                      <h3 className="card-title" style={{ marginBottom: 0 }}>
-                        {contest.title}
-                      </h3>
-                      <span className="badge badge-past">{contest.status}</span>
+        {/* Active Contests Section */}
+        <section className="mb-10">
+          <h2 className="text-xl font-semibold text-zinc-100 mb-4">Active Contests</h2>
+          {activeContests.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <p className="text-zinc-500">No active contests at the moment. Check back soon!</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4">
+              {activeContests.map((contest) => (
+                <Card key={contest.id} className="hover:border-zinc-700 transition-colors">
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <CardTitle className="text-lg">{contest.title}</CardTitle>
+                          <Badge variant="active">Active</Badge>
+                        </div>
+                        <CardDescription className="mb-3">{contest.description}</CardDescription>
+                        <p className="text-sm text-zinc-500">
+                          Started: {new Date(contest.startAt).toLocaleString()}
+                        </p>
+                      </div>
+                      <Button
+                        onClick={() => handleJoin(contest.id)}
+                        disabled={joining === contest.id}
+                        variant="success"
+                        size="lg"
+                        className="ml-6"
+                      >
+                        {joining === contest.id ? (
+                          'Joining...'
+                        ) : (
+                          <>
+                            <Play className="h-4 w-4 mr-2" />
+                            Attempt
+                          </>
+                        )}
+                      </Button>
                     </div>
-                    <p className="card-description" style={{ marginBottom: 'var(--spacing-md)' }}>
-                      {contest.description}
-                    </p>
-                    <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-                      Ended: {new Date(contest.endAt).toLocaleString()}
-                    </p>
-                  </div>
-                  <button
-                    className="btn btn-secondary"
-                    style={{ marginLeft: 'var(--spacing-lg)' }}
-                    disabled
-                  >
-                    View Leaderboard
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Past Contests Section */}
+        <section>
+          <h2 className="text-xl font-semibold text-zinc-100 mb-4">Past Contests</h2>
+          {pastContests.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <p className="text-zinc-500">No past contests available</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4">
+              {pastContests.map((contest) => (
+                <Card key={contest.id} className="hover:border-zinc-700 transition-colors">
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <CardTitle className="text-lg">{contest.title}</CardTitle>
+                          <Badge variant="past">{contest.status}</Badge>
+                        </div>
+                        <CardDescription className="mb-3">{contest.description}</CardDescription>
+                        <p className="text-sm text-zinc-500">
+                          Ended: {new Date(contest.endAt).toLocaleString()}
+                        </p>
+                      </div>
+                      <Button variant="secondary" className="ml-6" disabled>
+                        <Trophy className="h-4 w-4 mr-2" />
+                        View Leaderboard
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );

@@ -1,5 +1,9 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { Button } from '../components/ui/button';
+import { Card, CardContent } from '../components/ui/card';
+import { Badge } from '../components/ui/badge';
+import { Trophy, Clock, Check, X } from 'lucide-react';
 
 interface MCQOption {
   id: string;
@@ -172,89 +176,75 @@ const PlayContest: React.FC = () => {
 
   if (error) {
     return (
-      <div className="container" style={{ paddingTop: '4rem' }}>
-        <div className="error-message">
-          <h3>{error}</h3>
-        </div>
-        <div className="text-center mt-lg">
-          <button onClick={() => navigate('/contests')} className="btn btn-primary">
-            Back to Contests
-          </button>
-        </div>
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
+        <Card className="max-w-md w-full">
+          <CardContent className="p-8 text-center">
+            <div className="h-12 w-12 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4">
+              <X className="h-6 w-6 text-red-400" />
+            </div>
+            <h3 className="text-xl font-semibold text-zinc-100 mb-2">{error}</h3>
+            <Button onClick={() => navigate('/contests')} variant="primary" className="mt-4">
+              Back to Contests
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   if (contestEnded) {
     return (
-      <div className="container" style={{ paddingTop: '4rem' }}>
-        <div className="card text-center">
-          <h2 style={{ marginBottom: 'var(--spacing-lg)' }}>Contest Ended!</h2>
-          {submissionResult && (
-            <div style={{ fontSize: '1.125rem', marginBottom: 'var(--spacing-xl)' }}>
-              <p>Your Final Score: <strong>{submissionResult.currentScore}</strong></p>
-              <p>Your Rank: <strong>#{submissionResult.currentRank}</strong></p>
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
+        <Card className="max-w-md w-full">
+          <CardContent className="p-8 text-center">
+            <div className="h-16 w-16 rounded-full bg-purple-500/20 flex items-center justify-center mx-auto mb-6">
+              <Trophy className="h-8 w-8 text-purple-400" />
             </div>
-          )}
-          <button onClick={() => navigate('/contests')} className="btn btn-primary btn-lg">
-            Back to Contests
-          </button>
-        </div>
+            <h2 className="text-2xl font-bold text-zinc-100 mb-4">Contest Ended!</h2>
+            {submissionResult && (
+              <div className="space-y-2 mb-6">
+                <p className="text-lg text-zinc-300">
+                  Final Score: <span className="text-purple-400 font-bold">{submissionResult.currentScore}</span>
+                </p>
+                <p className="text-lg text-zinc-300">
+                  Final Rank: <span className="text-yellow-400 font-bold">#{submissionResult.currentRank}</span>
+                </p>
+              </div>
+            )}
+            <Button onClick={() => navigate('/contests')} variant="primary" size="lg" className="w-full">
+              Back to Contests
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   if (!currentQuestion) {
     return (
-      <div className="loading">
-        <div>
-          <div className="spinner" style={{ margin: '0 auto var(--spacing-md)' }}></div>
-          <p>Waiting for contest to start...</p>
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-8 w-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-zinc-400">Waiting for contest to start...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: '250px 1fr',
-      height: '100vh',
-      backgroundColor: 'var(--bg-primary)'
-    }}>
+    <div className="grid grid-cols-[250px_1fr] h-screen bg-zinc-950">
       {/* Left Sidebar - Question List */}
-      <div style={{
-        backgroundColor: 'var(--bg-secondary)',
-        borderRight: '1px solid var(--border-color)',
-        padding: 'var(--spacing-lg)',
-        overflowY: 'auto'
-      }}>
-        <h3 style={{
-          color: 'var(--text-primary)',
-          marginBottom: 'var(--spacing-lg)',
-          fontSize: '1.125rem'
-        }}>
-          Questions
-        </h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
+      <div className="bg-zinc-900 border-r border-zinc-800 p-6 overflow-y-auto">
+        <h3 className="text-zinc-100 mb-6 text-lg font-semibold">Questions</h3>
+        <div className="flex flex-col gap-2">
           {Array.from({ length: currentQuestion.totalQuestions }).map((_, idx) => (
             <div
               key={idx}
-              style={{
-                padding: 'var(--spacing-md)',
-                backgroundColor: idx + 1 === currentQuestion.questionNumber
-                  ? 'var(--accent-primary)'
-                  : 'var(--bg-tertiary)',
-                color: idx + 1 === currentQuestion.questionNumber
-                  ? 'white'
-                  : 'var(--text-secondary)',
-                borderRadius: 'var(--radius-md)',
-                fontSize: '0.875rem',
-                fontWeight: idx + 1 === currentQuestion.questionNumber ? 600 : 400,
-                border: idx + 1 === currentQuestion.questionNumber
-                  ? '2px solid var(--accent-light)'
-                  : '1px solid var(--border-color)'
-              }}
+              className={`p-3 rounded-lg text-sm font-medium transition-colors ${
+                idx + 1 === currentQuestion.questionNumber
+                  ? 'bg-purple-600 text-white border-2 border-purple-400'
+                  : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+              }`}
             >
               Question {idx + 1}
             </div>
@@ -263,92 +253,67 @@ const PlayContest: React.FC = () => {
       </div>
 
       {/* Main Content */}
-      <div style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100vh',
-        overflowY: 'auto'
-      }}>
+      <div className="flex flex-col h-screen overflow-y-auto">
         {/* Top Bar with Timer and Rank */}
-        <div style={{
-          backgroundColor: 'var(--bg-secondary)',
-          borderBottom: '1px solid var(--border-color)',
-          padding: 'var(--spacing-lg) var(--spacing-xl)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          position: 'sticky',
-          top: 0,
-          zIndex: 10
-        }}>
-          <div style={{ display: 'flex', gap: 'var(--spacing-xl)', alignItems: 'center' }}>
+        <div className="bg-zinc-900 border-b border-zinc-800 px-8 py-4 flex justify-between items-center sticky top-0 z-10">
+          <div className="flex gap-8 items-center">
             <div>
-              <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Score</span>
-              <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--accent-primary)' }}>
-                {currentScore}
-              </div>
+              <span className="text-zinc-500 text-sm">Score</span>
+              <div className="text-2xl font-bold text-purple-400">{currentScore}</div>
             </div>
             <div>
-              <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Rank</span>
-              <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>
-                #{currentRank || '-'}
-              </div>
+              <span className="text-zinc-500 text-sm">Rank</span>
+              <div className="text-2xl font-bold text-zinc-100">#{currentRank || '-'}</div>
             </div>
           </div>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--spacing-md)',
-            backgroundColor: timeRemaining < 10 ? 'var(--error-bg)' : 'var(--bg-tertiary)',
-            padding: 'var(--spacing-md) var(--spacing-lg)',
-            borderRadius: 'var(--radius-lg)',
-            border: `2px solid ${timeRemaining < 10 ? 'var(--error-border)' : 'var(--border-color)' }`
-          }}>
-            <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Time</span>
-            <div style={{
-              fontSize: '2rem',
-              fontWeight: 'bold',
-              color: timeRemaining < 10 ? 'var(--error-text)' : 'var(--accent-primary)',
-              minWidth: '60px',
-              textAlign: 'center'
-            }}>
+          <div className={`flex items-center gap-3 px-4 py-2 rounded-lg border-2 ${
+            timeRemaining < 10
+              ? 'bg-red-500/10 border-red-500/50'
+              : 'bg-zinc-800 border-zinc-700'
+          }`}>
+            <Clock className={`h-5 w-5 ${timeRemaining < 10 ? 'text-red-400' : 'text-zinc-400'}`} />
+            <span className={`text-3xl font-bold min-w-[60px] text-center ${
+              timeRemaining < 10 ? 'text-red-400' : 'text-purple-400'
+            }`}>
               {Math.ceil(timeRemaining)}s
-            </div>
+            </span>
           </div>
         </div>
 
         {/* Question Content */}
-        <div style={{ padding: 'var(--spacing-xl)', maxWidth: '900px', margin: '0 auto', width: '100%' }}>
+        <div className="p-8 max-w-4xl mx-auto w-full">
           {/* Question Header */}
-          <div style={{
-            marginBottom: 'var(--spacing-xl)',
-            paddingBottom: 'var(--spacing-lg)',
-            borderBottom: '2px solid var(--border-color)'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--spacing-md)' }}>
-              <h2 style={{ color: 'var(--text-primary)', margin: 0 }}>
+          <div className="mb-8 pb-6 border-b-2 border-zinc-800">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-zinc-100 text-xl font-semibold">
                 Question {currentQuestion.questionNumber} of {currentQuestion.totalQuestions}
               </h2>
-              <span className="badge badge-active">
-                {currentQuestion.points} points
-              </span>
+              <Badge variant="active">{currentQuestion.points} points</Badge>
             </div>
-            <h3 style={{ color: 'var(--text-primary)', fontSize: '1.5rem', marginBottom: 'var(--spacing-md)' }}>
-              {currentQuestion.title}
-            </h3>
-            <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-              {currentQuestion.description}
-            </p>
+            <h3 className="text-zinc-100 text-2xl font-bold mb-4">{currentQuestion.title}</h3>
+            <p className="text-zinc-400 leading-relaxed">{currentQuestion.description}</p>
           </div>
 
           {/* Submission Result */}
           {submissionResult && (
-            <div className={submissionResult.isCorrect ? 'success-message' : 'error-message'}
-              style={{ marginBottom: 'var(--spacing-xl)' }}>
-              <h3 style={{ marginBottom: 'var(--spacing-sm)' }}>
-                {submissionResult.isCorrect ? '✓ Correct Answer!' : '✗ Incorrect Answer'}
-              </h3>
-              <p style={{ margin: 0 }}>
+            <div className={`mb-8 p-4 rounded-lg border ${
+              submissionResult.isCorrect
+                ? 'bg-green-500/10 border-green-500/50'
+                : 'bg-red-500/10 border-red-500/50'
+            }`}>
+              <div className="flex items-center gap-3 mb-2">
+                {submissionResult.isCorrect ? (
+                  <Check className="h-6 w-6 text-green-400" />
+                ) : (
+                  <X className="h-6 w-6 text-red-400" />
+                )}
+                <h3 className={`text-lg font-semibold ${
+                  submissionResult.isCorrect ? 'text-green-400' : 'text-red-400'
+                }`}>
+                  {submissionResult.isCorrect ? 'Correct Answer!' : 'Incorrect Answer'}
+                </h3>
+              </div>
+              <p className="text-zinc-300 text-sm">
                 Points earned: {submissionResult.pointsEarned} | 
                 Total score: {submissionResult.currentScore} | 
                 Rank: #{submissionResult.currentRank}
@@ -357,7 +322,7 @@ const PlayContest: React.FC = () => {
           )}
 
           {/* MCQ Options */}
-          <div style={{ display: 'grid', gap: 'var(--spacing-md)', marginBottom: 'var(--spacing-xl)' }}>
+          <div className="grid gap-3 mb-8">
             {currentQuestion.mcqOptions?.map((option, index) => {
               const isSelected = selectedOption === option.id;
               return (
@@ -365,55 +330,41 @@ const PlayContest: React.FC = () => {
                   key={option.id}
                   onClick={() => !submitting && !submissionResult && setSelectedOption(option.id)}
                   disabled={submitting || !!submissionResult}
-                  style={{
-                    padding: 'var(--spacing-lg)',
-                    textAlign: 'left',
-                    backgroundColor: isSelected ? 'var(--bg-tertiary)' : 'var(--bg-card)',
-                    border: `2px solid ${isSelected ? 'var(--accent-primary)' : 'var(--border-color)'}`,
-                    borderRadius: 'var(--radius-lg)',
-                    color: 'var(--text-primary)',
-                    cursor: submitting || submissionResult ? 'not-allowed' : 'pointer',
-                    opacity: submitting || submissionResult ? 0.6 : 1,
-                    fontSize: '1rem',
-                    transition: 'all 0.2s',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 'var(--spacing-md)'
-                  }}
+                  className={`p-4 text-left rounded-xl border-2 transition-all flex items-center gap-4 ${
+                    isSelected
+                      ? 'bg-zinc-800 border-purple-500'
+                      : 'bg-zinc-900 border-zinc-700 hover:border-zinc-600'
+                  } ${
+                    (submitting || submissionResult) ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                  }`}
                 >
-                  <span style={{
-                    width: '32px',
-                    height: '32px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: '50%',
-                    backgroundColor: isSelected ? 'var(--accent-primary)' : 'var(--bg-secondary)',
-                    color: isSelected ? 'white' : 'var(--text-secondary)',
-                    fontWeight: 600,
-                    flexShrink: 0
-                  }}>
+                  <span className={`w-8 h-8 flex items-center justify-center rounded-full font-semibold text-sm ${
+                    isSelected
+                      ? 'bg-purple-500 text-white'
+                      : 'bg-zinc-800 text-zinc-400'
+                  }`}>
                     {String.fromCharCode(65 + index)}
                   </span>
-                  <span>{option.text}</span>
+                  <span className="text-zinc-100">{option.text}</span>
                 </button>
               );
             })}
           </div>
 
           {/* Submit Button */}
-          <button
+          <Button
             onClick={handleSubmit}
             disabled={!selectedOption || submitting || !!submissionResult}
-            className="btn btn-primary btn-lg"
-            style={{ width: '100%' }}
+            variant="primary"
+            size="lg"
+            className="w-full"
           >
             {submitting
               ? 'Submitting...'
               : submissionResult
               ? 'Waiting for next question...'
               : 'Submit Answer'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { contestsAPI } from '../services/api';
 import { ContestSummary } from '../types';
+import { Button } from '../components/ui/button';
+import { Card, CardContent, CardDescription, CardTitle } from '../components/ui/card';
+import { Badge } from '../components/ui/badge';
+import { Plus, LogOut, Monitor, Pencil, Trash2, Eye } from 'lucide-react';
 
 const Contests: React.FC = () => {
   const [contests, setContests] = useState<ContestSummary[]>([]);
@@ -29,124 +33,156 @@ const Contests: React.FC = () => {
     navigate('/admin/login');
   };
 
+  const handleDelete = async (contestId: string) => {
+    if (!confirm('Are you sure you want to delete this contest?')) {
+      return;
+    }
+
+    try {
+      await contestsAPI.delete(contestId);
+      setContests(contests.filter(c => c.id !== contestId));
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Failed to delete contest');
+    }
+  };
+
   const activeContests = contests.filter(c => c.status === 'ACTIVE');
   const pastContests = contests.filter(c => c.status !== 'ACTIVE');
 
   if (loading) {
     return (
-      <div className="loading">
-        <div className="spinner"></div>
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-8 w-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-zinc-400">Loading contests...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="container">
-      <div className="page-header">
-        <h1 className="page-title">Contest Management</h1>
-        <div style={{ display: 'flex', gap: 'var(--spacing-md)' }}>
-          <Link to="/admin/contests/new" className="btn btn-success">
-            Create New Contest
-          </Link>
-          <button onClick={handleLogout} className="btn btn-secondary">
-            Logout
-          </button>
-        </div>
-      </div>
-
-      {error && (
-        <div className="error-message">
-          {error}
-        </div>
-      )}
-
-      {/* Active Contests */}
-      <div className="mb-lg">
-        <h2 style={{ marginBottom: 'var(--spacing-lg)', color: 'var(--text-primary)' }}>
-          Active Contests
-        </h2>
-        {activeContests.length === 0 ? (
-          <div className="card text-center">
-            <p style={{ color: 'var(--text-secondary)' }}>
-              No active contests
-            </p>
+    <div className="min-h-screen bg-zinc-950">
+      <div className="max-w-6xl mx-auto px-6 py-8">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <h1 className="text-3xl font-bold text-zinc-100">Contest Management</h1>
+          <div className="flex items-center gap-3">
+            <Link to="/admin/contests/new">
+              <Button variant="success">
+                <Plus className="h-4 w-4 mr-2" />
+                Create New Contest
+              </Button>
+            </Link>
+            <Button variant="secondary" onClick={handleLogout}>
+              <LogOut className="h-4 w-4 mr-2" />
+              Logout
+            </Button>
           </div>
-        ) : (
-          <div className="grid">
-            {activeContests.map((contest) => (
-              <div key={contest.id} className="card">
-                <div className="flex-between">
-                  <div style={{ flex: 1 }}>
-                    <div className="flex gap-md mb-sm" style={{ alignItems: 'center' }}>
-                      <h3 className="card-title" style={{ marginBottom: 0 }}>
-                        {contest.title}
-                      </h3>
-                      <span className="badge badge-active">Active</span>
-                    </div>
-                    <p className="card-description" style={{ marginBottom: 'var(--spacing-md)' }}>
-                      {contest.description}
-                    </p>
-                    <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-                      <div>Start: {new Date(contest.startAt).toLocaleString()}</div>
-                      <div>End: {new Date(contest.endAt).toLocaleString()}</div>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 'var(--spacing-sm)', marginLeft: 'var(--spacing-lg)' }}>
-                    <Link to={`/admin/contests/${contest.id}/monitor`} className="btn btn-primary">
-                      Monitor
-                    </Link>
-                    <Link to={`/admin/contests/${contest.id}`} className="btn btn-secondary">
-                      Edit
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            ))}
+        </div>
+
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4 text-red-400 mb-6">
+            {error}
           </div>
         )}
-      </div>
 
-      {/* Past Contests */}
-      <div>
-        <h2 style={{ marginBottom: 'var(--spacing-lg)', color: 'var(--text-primary)' }}>
-          Past Contests
-        </h2>
-        {pastContests.length === 0 ? (
-          <div className="card text-center">
-            <p style={{ color: 'var(--text-secondary)' }}>
-              No past contests
-            </p>
-          </div>
-        ) : (
-          <div className="grid">
-            {pastContests.map((contest) => (
-              <div key={contest.id} className="card">
-                <div className="flex-between">
-                  <div style={{ flex: 1 }}>
-                    <div className="flex gap-md mb-sm" style={{ alignItems: 'center' }}>
-                      <h3 className="card-title" style={{ marginBottom: 0 }}>
-                        {contest.title}
-                      </h3>
-                      <span className="badge badge-past">{contest.status}</span>
+        {/* Active Contests */}
+        <section className="mb-10">
+          <h2 className="text-xl font-semibold text-zinc-100 mb-4">Active Contests</h2>
+          {activeContests.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <p className="text-zinc-500">No active contests</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4">
+              {activeContests.map((contest) => (
+                <Card key={contest.id} className="hover:border-zinc-700 transition-colors">
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <CardTitle className="text-lg">{contest.title}</CardTitle>
+                          <Badge variant="active">Active</Badge>
+                        </div>
+                        <CardDescription className="mb-4">{contest.description}</CardDescription>
+                        <div className="text-sm text-zinc-500 space-y-1">
+                          <div>Start: {new Date(contest.startAt).toLocaleString()}</div>
+                          <div>End: {new Date(contest.endAt).toLocaleString()}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 ml-6">
+                        <Link to={`/admin/contests/${contest.id}/monitor`}>
+                          <Button variant="primary" size="sm">
+                            <Monitor className="h-4 w-4 mr-2" />
+                            Monitor
+                          </Button>
+                        </Link>
+                        <Link to={`/admin/contests/${contest.id}`}>
+                          <Button variant="secondary" size="sm">
+                            <Pencil className="h-4 w-4 mr-2" />
+                            Edit
+                          </Button>
+                        </Link>
+                      </div>
                     </div>
-                    <p className="card-description" style={{ marginBottom: 'var(--spacing-md)' }}>
-                      {contest.description}
-                    </p>
-                    <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-                      <div>Start: {new Date(contest.startAt).toLocaleString()}</div>
-                      <div>End: {new Date(contest.endAt).toLocaleString()}</div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Past Contests */}
+        <section>
+          <h2 className="text-xl font-semibold text-zinc-100 mb-4">Past Contests</h2>
+          {pastContests.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <p className="text-zinc-500">No past contests</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4">
+              {pastContests.map((contest) => (
+                <Card key={contest.id} className="hover:border-zinc-700 transition-colors">
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <CardTitle className="text-lg">{contest.title}</CardTitle>
+                          <Badge variant="past">{contest.status}</Badge>
+                        </div>
+                        <CardDescription className="mb-4">{contest.description}</CardDescription>
+                        <div className="text-sm text-zinc-500 space-y-1">
+                          <div>Start: {new Date(contest.startAt).toLocaleString()}</div>
+                          <div>End: {new Date(contest.endAt).toLocaleString()}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 ml-6">
+                        <Link to={`/admin/contests/${contest.id}`}>
+                          <Button variant="secondary" size="sm">
+                            <Eye className="h-4 w-4 mr-2" />
+                            View Details
+                          </Button>
+                        </Link>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDelete(contest.id)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                  <div style={{ marginLeft: 'var(--spacing-lg)' }}>
-                    <Link to={`/admin/contests/${contest.id}`} className="btn btn-secondary">
-                      View Details
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );

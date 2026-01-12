@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { contestsAPI } from '../services/api';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Card } from '../components/ui/card';
+import { Badge } from '../components/ui/badge';
+import { Separator } from '../components/ui/separator';
 
 interface ImportedQuestion {
   id: number;
@@ -75,124 +80,115 @@ const CreateContest: React.FC = () => {
   };
 
   return (
-    <div className="container-sm" style={{ paddingTop: '2rem' }}>
-      <div className="card" style={{ maxWidth: '700px', margin: '0 auto' }}>
-        <h2 style={{ marginBottom: 'var(--spacing-xl)' }}>Create New Contest</h2>
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label htmlFor="title" className="form-label">Title</label>
-            <input
-              type="text"
-              id="title"
-              name="title"
-              value={formData.title}
-              onChange={handleChange}
-              required
-              className="form-input"
-              placeholder="Enter contest title"
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="description" className="form-label">Description</label>
-            <textarea
-              id="description"
-              name="description"
-              value={formData.description}
-              onChange={handleChange}
-              required
-              className="form-input"
-              style={{ minHeight: '100px', resize: 'vertical' }}
-              placeholder="Enter contest description"
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="startAt" className="form-label">Start Time</label>
-            <input
-              type="datetime-local"
-              id="startAt"
-              name="startAt"
-              value={formData.startAt}
-              onChange={handleChange}
-              required
-              className="form-input"
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="endAt" className="form-label">End Time</label>
-            <input
-              type="datetime-local"
-              id="endAt"
-              name="endAt"
-              value={formData.endAt}
-              onChange={handleChange}
-              required
-              className="form-input"
-            />
-          </div>
-
-          {/* Questions Section */}
-          <div style={{ 
-            marginTop: 'var(--spacing-xl)', 
-            paddingTop: 'var(--spacing-xl)',
-            borderTop: '1px solid var(--border-color)' 
-          }}>
-            <h3 style={{ 
-              marginBottom: 'var(--spacing-lg)',
-              color: 'var(--text-primary)',
-              fontSize: '1.25rem'
-            }}>
-              Questions
-            </h3>
-            <div style={{ 
-              display: 'flex', 
-              gap: 'var(--spacing-md)',
-              marginBottom: 'var(--spacing-lg)'
-            }}>
-              <button
-                type="button"
-                onClick={() => navigate('/admin/questions/import')}
-                className="btn btn-secondary"
-              >
-                Import Question
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate('/admin/questions/new')}
-                className="btn btn-primary"
-              >
-                Create New
-              </button>
+    <div className="min-h-screen bg-zinc-950 flex items-start justify-center p-8">
+      <Card className="w-full max-w-4xl p-10">
+        <h1 className="text-3xl font-semibold text-white mb-8">Create new contest</h1>
+        
+        <form onSubmit={handleSubmit} className="space-y-8">
+          {/* Details Section */}
+          <div>
+            <p className="text-xs text-zinc-500 uppercase tracking-wider mb-4">Details</p>
+            
+            <div className="grid grid-cols-2 gap-6 mb-6">
+              <div>
+                <label htmlFor="title" className="block text-sm font-medium text-zinc-300 mb-2">
+                  Title
+                </label>
+                <Input
+                  type="text"
+                  id="title"
+                  name="title"
+                  value={formData.title}
+                  onChange={handleChange}
+                  required
+                  placeholder="Enter contest title"
+                />
+              </div>
+              <div>
+                <label htmlFor="description" className="block text-sm font-medium text-zinc-300 mb-2">
+                  Description
+                </label>
+                <Input
+                  type="text"
+                  id="description"
+                  name="description"
+                  value={formData.description}
+                  onChange={handleChange}
+                  required
+                  placeholder="Enter contest description"
+                />
+              </div>
             </div>
 
-            {/* Imported Questions List */}
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label htmlFor="startAt" className="block text-sm font-medium text-zinc-300 mb-2">
+                  Start date
+                </label>
+                <Input
+                  type="datetime-local"
+                  id="startAt"
+                  name="startAt"
+                  value={formData.startAt}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="endAt" className="block text-sm font-medium text-zinc-300 mb-2">
+                  End date
+                </label>
+                <Input
+                  type="datetime-local"
+                  id="endAt"
+                  name="endAt"
+                  value={formData.endAt}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Questions Section */}
+          <div>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-semibold text-white">Questions</h2>
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  onClick={() => navigate('/admin/questions/import')}
+                  variant="outline"
+                >
+                  Import question
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => navigate('/admin/questions/new')}
+                  variant="outline"
+                >
+                  Create new
+                </Button>
+              </div>
+            </div>
+
+            {/* Questions List */}
             {importedQuestions.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
+              <div className="space-y-3">
                 {importedQuestions.map((question, index) => (
                   <div
                     key={question.id}
-                    style={{
-                      padding: 'var(--spacing-md)',
-                      borderRadius: 'var(--border-radius)',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'rgba(102, 126, 234, 0.05)',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
+                    className="bg-zinc-850 border border-zinc-800 rounded-lg p-4 flex items-center justify-between"
                   >
-                    <div style={{ flex: 1 }}>
-                      <div style={{ 
-                        fontWeight: '500',
-                        color: 'var(--text-primary)',
-                        marginBottom: '0.25rem'
-                      }}>
+                    <div>
+                      <p className="text-white font-medium mb-1">
                         {index + 1}. {question.title}
-                      </div>
-                      <div style={{ 
-                        fontSize: '0.875rem',
-                        color: 'var(--text-secondary)'
-                      }}>
-                        Time: 20 mins • Points: 10
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="default" className="text-xs">⏱ 20 mins</Badge>
+                        <Badge variant="default" className="text-xs">🏆 10 points</Badge>
                       </div>
                     </div>
                   </div>
@@ -201,29 +197,34 @@ const CreateContest: React.FC = () => {
             )}
 
             {importedQuestions.length === 0 && (
-              <div style={{
-                padding: 'var(--spacing-lg)',
-                textAlign: 'center',
-                color: 'var(--text-secondary)',
-                fontSize: '0.9rem',
-                fontStyle: 'italic'
-              }}>
-                No questions added yet. Import or create questions to add them to this contest.
+              <div className="border-2 border-dashed border-zinc-800 rounded-lg p-8 text-center">
+                <p className="text-zinc-500 text-sm italic">
+                  No questions added yet. Import or create questions to add them to this contest.
+                </p>
               </div>
             )}
           </div>
 
-          {error && <div className="error-message">{error}</div>}
-          <button
-            type="submit"
-            disabled={loading}
-            className="btn btn-success btn-lg"
-            style={{ width: '100%', marginTop: 'var(--spacing-lg)' }}
-          >
-            {loading ? 'Creating...' : 'Create Contest'}
-          </button>
+          {error && (
+            <div className="bg-red-900/20 border border-red-800 rounded-lg p-4 text-red-400 text-sm">
+              {error}
+            </div>
+          )}
+
+          <Separator />
+
+          <div className="flex justify-end">
+            <Button
+              type="submit"
+              disabled={loading}
+              variant="success"
+              size="lg"
+            >
+              {loading ? 'Creating...' : 'Create Contest'}
+            </Button>
+          </div>
         </form>
-      </div>
+      </Card>
     </div>
   );
 };

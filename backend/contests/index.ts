@@ -170,4 +170,35 @@ router.get("/leaderboard/:contestId/me", async (req, res) => {
   }
 });
 
+// DELETE /contests/:contestId - Delete a contest
+router.delete("/:contestId", async (req, res) => {
+  try {
+    const { contestId } = req.params;
+    
+    // Check if contest exists
+    const contest = await prisma.contest.findUnique({
+      where: { id: contestId }
+    });
+    
+    if (!contest) {
+      return res.status(404).json({ error: "Contest not found" });
+    }
+    
+    // Prevent deletion of active contests
+    if (contest.status === "ACTIVE") {
+      return res.status(400).json({ error: "Cannot delete active contest" });
+    }
+    
+    // Delete contest (cascade will handle related records)
+    await prisma.contest.delete({
+      where: { id: contestId }
+    });
+    
+    res.json({ message: "Contest deleted successfully" });
+  } catch (error) {
+    console.error("Delete contest error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

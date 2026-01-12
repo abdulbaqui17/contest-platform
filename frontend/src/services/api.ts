@@ -59,6 +59,11 @@ export const contestsAPI = {
     const response = await api.post(`/contest/${contestId}/join`);
     return response.data;
   },
+
+  delete: async (id: string): Promise<{ message: string }> => {
+    const response = await api.delete(`/contests/${id}`);
+    return response.data;
+  },
 };
 
 // Questions API

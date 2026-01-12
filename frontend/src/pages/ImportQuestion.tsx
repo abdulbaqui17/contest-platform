@@ -1,5 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Button } from '../components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { ArrowLeft, Check } from 'lucide-react';
 
 interface Question {
   id: number;
@@ -34,53 +37,57 @@ const ImportQuestion: React.FC = () => {
   };
 
   return (
-    <div className="container-sm" style={{ paddingTop: '2rem' }}>
-      <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center',
-          marginBottom: 'var(--spacing-xl)'
-        }}>
-          <h2>Import Questions</h2>
-          <button onClick={() => navigate(-1)} className="btn btn-secondary">
+    <div className="min-h-screen bg-zinc-950">
+      <div className="max-w-3xl mx-auto px-6 py-8">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <h1 className="text-2xl font-bold text-zinc-100">Import Questions</h1>
+          <Button variant="secondary" onClick={() => navigate(-1)}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
             Back
-          </button>
+          </Button>
         </div>
 
-        <div className="card">
-          {MOCK_QUESTIONS.map((question) => {
-            const isImported = importedIds.has(question.id);
-            
-            return (
-              <div
-                key={question.id}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: 'var(--spacing-md)',
-                  borderBottom: '1px solid var(--border-color)',
-                }}
-              >
-                <span style={{ 
-                  fontSize: '1rem',
-                  color: isImported ? 'var(--text-secondary)' : 'var(--text-primary)',
-                }}>
-                  {question.title}
-                </span>
-                <button
-                  onClick={() => handleImport(question.id)}
-                  disabled={isImported}
-                  className={isImported ? 'btn btn-secondary' : 'btn btn-success'}
-                  style={{ minWidth: '100px' }}
-                >
-                  {isImported ? 'Imported' : 'Import'}
-                </button>
-              </div>
-            );
-          })}
-        </div>
+        {/* Question List */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Available Questions</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y divide-zinc-800">
+              {MOCK_QUESTIONS.map((question) => {
+                const isImported = importedIds.has(question.id);
+                
+                return (
+                  <div
+                    key={question.id}
+                    className="flex items-center justify-between px-6 py-4 hover:bg-zinc-800/50 transition-colors"
+                  >
+                    <span className={`text-base ${isImported ? 'text-zinc-500' : 'text-zinc-100'}`}>
+                      {question.title}
+                    </span>
+                    <Button
+                      onClick={() => handleImport(question.id)}
+                      disabled={isImported}
+                      variant={isImported ? 'secondary' : 'success'}
+                      size="sm"
+                      className="min-w-[100px]"
+                    >
+                      {isImported ? (
+                        <>
+                          <Check className="h-4 w-4 mr-2" />
+                          Imported
+                        </>
+                      ) : (
+                        'Import'
+                      )}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

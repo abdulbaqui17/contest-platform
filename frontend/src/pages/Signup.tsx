@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { authAPI } from '../services/api';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 
 const Signup: React.FC = () => {
   const [formData, setFormData] = useState({
@@ -36,63 +40,75 @@ const Signup: React.FC = () => {
   };
 
   return (
-    <div className="container-sm" style={{ paddingTop: '4rem' }}>
-      <div className="card" style={{ maxWidth: '500px', margin: '0 auto' }}>
-        <h2 style={{ textAlign: 'center', marginBottom: 'var(--spacing-xl)' }}>Create Account</h2>
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label htmlFor="name" className="form-label">Full Name</label>
-            <input
-              type="text"
-              id="name"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              required
-              className="form-input"
-              placeholder="John Doe"
-            />
+    <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl">Create Account</CardTitle>
+          <CardDescription>
+            Sign up to start competing in contests
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="name">Full Name</Label>
+              <Input
+                type="text"
+                id="name"
+                name="name"
+                value={formData.name}
+                onChange={handleChange}
+                required
+                placeholder="John Doe"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                type="email"
+                id="email"
+                name="email"
+                value={formData.email}
+                onChange={handleChange}
+                required
+                placeholder="you@example.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                type="password"
+                id="password"
+                name="password"
+                value={formData.password}
+                onChange={handleChange}
+                required
+                placeholder="Minimum 6 characters"
+              />
+            </div>
+            {error && (
+              <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-3 text-red-400 text-sm">
+                {error}
+              </div>
+            )}
+            <Button
+              type="submit"
+              disabled={loading}
+              variant="primary"
+              size="lg"
+              className="w-full"
+            >
+              {loading ? 'Creating account...' : 'Sign Up'}
+            </Button>
+          </form>
+          <div className="mt-6 text-center text-zinc-500">
+            Already have an account?{' '}
+            <Link to="/signin" className="text-purple-400 hover:text-purple-300 transition-colors">
+              Sign In
+            </Link>
           </div>
-          <div className="form-group">
-            <label htmlFor="email" className="form-label">Email</label>
-            <input
-              type="email"
-              id="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              required
-              className="form-input"
-              placeholder="you@example.com"
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="password" className="form-label">Password</label>
-            <input
-              type="password"
-              id="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              required
-              className="form-input"
-              placeholder="Minimum 6 characters"
-            />
-          </div>
-          {error && <div className="error-message">{error}</div>}
-          <button
-            type="submit"
-            disabled={loading}
-            className="btn btn-primary btn-lg"
-            style={{ width: '100%' }}
-          >
-            {loading ? 'Creating account...' : 'Sign Up'}
-          </button>
-        </form>
-        <div style={{ marginTop: 'var(--spacing-xl)', textAlign: 'center', color: 'var(--text-secondary)' }}>
-          Already have an account? <Link to="/signin" style={{ color: 'var(--accent-primary)' }}>Sign In</Link>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };
