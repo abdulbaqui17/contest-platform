@@ -180,11 +180,10 @@ export class MockSubmissionService implements SubmissionService {
     const submission = await prisma.submission.create({
       data: {
         contestId,
-        participantId: userId,
+        userId,
         questionId,
-        answer: selectedOptionId || "",
+        selectedOptionId: selectedOptionId || null,
         isCorrect,
-        pointsEarned,
         submittedAt: new Date(submittedAt),
       }
     });

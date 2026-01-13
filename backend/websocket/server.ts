@@ -345,20 +345,28 @@ export class ContestWebSocketServer {
       where: { contestId, userId }
     });
 
+    // Fetch contest details
+    const contest = await prisma.contest.findUnique({
+      where: { id: contestId }
+    });
+
+    // Get final leaderboard
+    const topPlayers = await this.leaderboardService.getTopN(contestId, 10);
+    const totalParticipants = await this.leaderboardService.getTotalParticipants(contestId);
+    
     this.sendToClient(ws, {
       event: "contest_end",
       data: {
         contestId,
-        message: alreadyCompleted 
-          ? "You have already completed this contest"
-          : "Contest has ended",
+        title: contest?.title || "",
+        endTime: contest?.endAt?.toISOString() || new Date().toISOString(),
+        finalLeaderboard: topPlayers,
         userFinalRank: {
           rank: leaderboardEntry?.rank || 0,
           score: totalScore,
           questionsAnswered: submissions.length,
-          correctAnswers,
         },
-        alreadyCompleted,
+        totalParticipants,
       },
       timestamp: new Date().toISOString(),
     });
@@ -466,10 +474,9 @@ export class ContestWebSocketServer {
       } else {
         // Contest not started yet
         this.sendToClient(ws, {
-          event: "contest_status",
+          event: "error",
           data: {
-            contestId,
-            status: contestState.status,
+            code: "CONTEST_NOT_ACTIVE",
             message: `Contest is ${contestState.status}`,
           },
           timestamp: new Date().toISOString(),
