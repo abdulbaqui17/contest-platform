@@ -126,7 +126,7 @@ const ContestDetailPage: React.FC = () => {
 
         {/* Questions Section */}
         <Card className="mb-6">
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader>
             <div>
               <CardTitle className="flex items-center gap-2">
                 <FileQuestion className="h-5 w-5 text-purple-400" />
@@ -134,11 +134,6 @@ const ContestDetailPage: React.FC = () => {
               </CardTitle>
               <CardDescription>{contest.questions.length} questions in this contest</CardDescription>
             </div>
-            <Link to={`/admin/contests/${id}/questions`}>
-              <Button variant="success" size="sm">
-                Manage Questions
-              </Button>
-            </Link>
           </CardHeader>
           <CardContent>
             {contest.questions.length === 0 ? (

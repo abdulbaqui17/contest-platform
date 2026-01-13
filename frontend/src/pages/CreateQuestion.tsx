@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { questionsAPI } from '../services/api';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
@@ -41,15 +42,37 @@ const CreateQuestion: React.FC = () => {
     setOptions(newOptions);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Question Data:', {
-      type: selectedType,
-      title,
-      description,
-      options,
-    });
-    alert('Question created! Check console for data.');
+    
+    try {
+      // Save question to database via API
+      const newQuestion = await questionsAPI.createStandalone({
+        type: 'MCQ',
+        title,
+        description,
+        options,
+        points: 10,
+        timeLimit: 120
+      });
+      
+      // Add to localStorage for CreateContest page
+      const existingStr = localStorage.getItem('imported_questions');
+      const existing = existingStr ? JSON.parse(existingStr) : [];
+      existing.push({
+        id: newQuestion.id,
+        title: newQuestion.title,
+        points: 10,
+        timeLimit: 120
+      });
+      localStorage.setItem('imported_questions', JSON.stringify(existing));
+      
+      // Navigate back to create contest
+      navigate('/admin/contests/new');
+    } catch (error) {
+      console.error('Error creating question:', error);
+      alert('Failed to create question');
+    }
   };
 
   // Type Selection Screen

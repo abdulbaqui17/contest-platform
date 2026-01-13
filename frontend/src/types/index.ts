@@ -148,6 +148,11 @@ export interface CreateContestRequest {
   description: string;
   startAt: string;
   endAt: string;
+  questions?: Array<{
+    id: string;
+    points: number;
+    timeLimit: number;
+  }>;
 }
 
 export interface CreateQuestionRequest {

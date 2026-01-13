@@ -1,26 +1,37 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { ArrowLeft, Check } from 'lucide-react';
+import { ArrowLeft, Check, Loader2 } from 'lucide-react';
+import { questionsAPI } from '../services/api';
 
 interface Question {
-  id: number;
+  id: string;
   title: string;
 }
 
-const MOCK_QUESTIONS: Question[] = [
-  { id: 1, title: '2 sum' },
-  { id: 2, title: 'todo app' },
-  { id: 3, title: 'redux mcq' },
-];
-
 const ImportQuestion: React.FC = () => {
   const navigate = useNavigate();
-  const [importedIds, setImportedIds] = useState<Set<number>>(new Set());
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [importedIds, setImportedIds] = useState<Set<string>>(new Set());
 
-  const handleImport = (id: number) => {
-    const question = MOCK_QUESTIONS.find(q => q.id === id);
+  useEffect(() => {
+    const fetchQuestions = async () => {
+      try {
+        const data = await questionsAPI.getAllStandalone();
+        setQuestions(data);
+      } catch (error) {
+        console.error('Error fetching questions:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchQuestions();
+  }, []);
+
+  const handleImport = (id: string) => {
+    const question = questions.find(q => q.id === id);
     if (!question) return;
 
     // Get existing imported questions from localStorage
@@ -28,13 +39,26 @@ const ImportQuestion: React.FC = () => {
     const existing = existingStr ? JSON.parse(existingStr) : [];
     
     // Add new question if not already imported
-    if (!existing.some((q: Question) => q.id === id)) {
-      existing.push(question);
+    if (!existing.some((q: any) => q.id === id)) {
+      existing.push({
+        id: id,
+        title: question.title,
+        points: 10,
+        timeLimit: 120
+      });
       localStorage.setItem('imported_questions', JSON.stringify(existing));
     }
     
     setImportedIds(prev => new Set([...prev, id]));
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-purple-500" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-zinc-950">
@@ -54,8 +78,13 @@ const ImportQuestion: React.FC = () => {
             <CardTitle className="text-lg">Available Questions</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
+            {questions.length === 0 ? (
+              <div className="p-6 text-center text-zinc-500">
+                No questions available. Create some questions first.
+              </div>
+            ) : (
             <div className="divide-y divide-zinc-800">
-              {MOCK_QUESTIONS.map((question) => {
+              {questions.map((question) => {
                 const isImported = importedIds.has(question.id);
                 
                 return (
@@ -86,6 +115,7 @@ const ImportQuestion: React.FC = () => {
                 );
               })}
             </div>
+            )}
           </CardContent>
         </Card>
       </div>
