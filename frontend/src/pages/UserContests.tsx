@@ -27,6 +27,11 @@ const UserContests: React.FC = () => {
     };
 
     fetchContests();
+
+    // Auto-refresh every 30 seconds to update contest statuses
+    const interval = setInterval(fetchContests, 30000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const handleJoin = async (contestId: string) => {
@@ -45,8 +50,25 @@ const UserContests: React.FC = () => {
     navigate('/');
   };
 
-  const activeContests = contests.filter(c => c.status === 'ACTIVE');
-  const pastContests = contests.filter(c => c.status !== 'ACTIVE');
+  const now = new Date();
+  const activeContests = contests
+    .filter(c => {
+      const start = new Date(c.startAt);
+      const end = new Date(c.endAt);
+      return start <= now && end > now;
+    })
+    .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+  
+  const upcomingContests = contests
+    .filter(c => {
+      const start = new Date(c.startAt);
+      return start > now;
+    })
+    .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+  
+  const pastContests = contests
+    .filter(c => new Date(c.endAt) <= now)
+    .sort((a, b) => new Date(b.endAt).getTime() - new Date(a.endAt).getTime());
 
   if (loading) {
     return (
@@ -118,6 +140,39 @@ const UserContests: React.FC = () => {
                           </>
                         )}
                       </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Upcoming Contests Section */}
+        <section className="mb-10">
+          <h2 className="text-xl font-semibold text-zinc-100 mb-4">Upcoming Contests</h2>
+          {upcomingContests.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <p className="text-zinc-500">No upcoming contests scheduled</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4">
+              {upcomingContests.map((contest) => (
+                <Card key={contest.id} className="hover:border-zinc-700 transition-colors">
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <CardTitle className="text-lg">{contest.title}</CardTitle>
+                          <Badge variant="default">Upcoming</Badge>
+                        </div>
+                        <CardDescription className="mb-3">{contest.description}</CardDescription>
+                        <p className="text-sm text-zinc-500">
+                          Starts: {new Date(contest.startAt).toLocaleString()}
+                        </p>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>

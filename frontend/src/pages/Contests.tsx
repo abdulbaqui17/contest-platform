@@ -26,6 +26,11 @@ const Contests: React.FC = () => {
     };
 
     fetchContests();
+
+    // Auto-refresh every 30 seconds to update contest statuses
+    const interval = setInterval(fetchContests, 30000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const handleLogout = () => {
@@ -46,8 +51,44 @@ const Contests: React.FC = () => {
     }
   };
 
-  const activeContests = contests.filter(c => c.status === 'ACTIVE');
-  const pastContests = contests.filter(c => c.status !== 'ACTIVE');
+  // Format date to local time string for display
+  // The date from backend is in UTC, toLocaleString converts to user's local timezone
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    console.log('🕐 Display time:', { 
+      input: dateString, 
+      asLocal: date.toLocaleString(),
+      asUTC: date.toISOString()
+    });
+    return date.toLocaleString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  };
+
+  const now = new Date();
+  const activeContests = contests
+    .filter(c => {
+      const start = new Date(c.startAt);
+      const end = new Date(c.endAt);
+      return start <= now && end > now;
+    })
+    .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+  
+  const upcomingContests = contests
+    .filter(c => {
+      const start = new Date(c.startAt);
+      return start > now;
+    })
+    .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+  
+  const pastContests = contests
+    .filter(c => new Date(c.endAt) <= now)
+    .sort((a, b) => new Date(b.endAt).getTime() - new Date(a.endAt).getTime());
 
   if (loading) {
     return (
@@ -86,6 +127,55 @@ const Contests: React.FC = () => {
           </div>
         )}
 
+        {/* Upcoming Contests */}
+        <section className="mb-10">
+          <h2 className="text-xl font-semibold text-zinc-100 mb-4">Upcoming Contests</h2>
+          {upcomingContests.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <p className="text-zinc-500">No upcoming contests</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4">
+              {upcomingContests.map((contest) => (
+                <Card key={contest.id} className="hover:border-zinc-700 transition-colors">
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <CardTitle className="text-lg">{contest.title}</CardTitle>
+                          <Badge variant="default">Upcoming</Badge>
+                        </div>
+                        <CardDescription className="mb-4">{contest.description}</CardDescription>
+                        <div className="text-sm text-zinc-500 space-y-1">
+                          <div>Start: {formatTime(contest.startAt)}</div>
+                          <div>End: {formatTime(contest.endAt)}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 ml-6">
+                        <Link to={`/admin/contests/${contest.id}`}>
+                          <Button variant="secondary" size="sm">
+                            <Pencil className="h-4 w-4 mr-2" />
+                            Edit
+                          </Button>
+                        </Link>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDelete(contest.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </section>
+
         {/* Active Contests */}
         <section className="mb-10">
           <h2 className="text-xl font-semibold text-zinc-100 mb-4">Active Contests</h2>
@@ -108,8 +198,8 @@ const Contests: React.FC = () => {
                         </div>
                         <CardDescription className="mb-4">{contest.description}</CardDescription>
                         <div className="text-sm text-zinc-500 space-y-1">
-                          <div>Start: {new Date(contest.startAt).toLocaleString()}</div>
-                          <div>End: {new Date(contest.endAt).toLocaleString()}</div>
+                          <div>Start: {formatTime(contest.startAt)}</div>
+                          <div>End: {formatTime(contest.endAt)}</div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 ml-6">
@@ -125,6 +215,13 @@ const Contests: React.FC = () => {
                             Edit
                           </Button>
                         </Link>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDelete(contest.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     </div>
                   </CardContent>
@@ -156,8 +253,8 @@ const Contests: React.FC = () => {
                         </div>
                         <CardDescription className="mb-4">{contest.description}</CardDescription>
                         <div className="text-sm text-zinc-500 space-y-1">
-                          <div>Start: {new Date(contest.startAt).toLocaleString()}</div>
-                          <div>End: {new Date(contest.endAt).toLocaleString()}</div>
+                          <div>Start: {formatTime(contest.startAt)}</div>
+                          <div>End: {formatTime(contest.endAt)}</div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 ml-6">
