@@ -1,6 +1,4 @@
-// Mock service implementations
-// These will be replaced with actual implementations later
-
+import { prisma } from "../../db/prismaClient";
 import type {
   ContestService,
   LeaderboardService,
@@ -10,19 +8,43 @@ import type {
 
 export class MockContestService implements ContestService {
   async getContest(contestId: string) {
-    // TODO: Implement with Prisma
+    // Get actual contest from database
+    const contest = await prisma.contest.findUnique({
+      where: { id: contestId },
+      include: {
+        questions: {
+          include: {
+            question: true
+          }
+        }
+      }
+    });
+    
+    if (!contest) {
+      return null;
+    }
+    
     return {
-      id: contestId,
-      title: "Mock Contest",
-      status: "ACTIVE",
-      startAt: new Date(),
-      endAt: new Date(Date.now() + 3600000),
+      id: contest.id,
+      title: contest.title,
+      status: contest.status,
+      startAt: contest.startAt,
+      endAt: contest.endAt,
+      questions: contest.questions
     };
   }
 
   async isUserParticipant(contestId: string, userId: string): Promise<boolean> {
-    // TODO: Implement with Prisma
-    return true;
+    // Check if user has joined the contest
+    const participant = await prisma.contestParticipant.findUnique({
+      where: {
+        contestId_userId: {
+          contestId,
+          userId
+        }
+      }
+    });
+    return !!participant;
   }
 
   async getCurrentQuestion(contestId: string, userId: string) {
