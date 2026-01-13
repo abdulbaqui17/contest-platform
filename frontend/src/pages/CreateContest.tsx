@@ -6,12 +6,25 @@ import { Input } from '../components/ui/input';
 import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Separator } from '../components/ui/separator';
+import { Trash2 } from 'lucide-react';
 
 interface ImportedQuestion {
-  id: number;
+  id: string;
   title: string;
+  points?: number;
+  timeLimit?: number;
 }
 import { CreateContestRequest } from '../types';
+
+// Helper function to convert ISO date string to datetime-local format (YYYY-MM-DDTHH:MM)
+const toDateTimeLocalString = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+};
 
 const CreateContest: React.FC = () => {
   const [formData, setFormData] = useState<CreateContestRequest>({
@@ -55,15 +68,69 @@ const CreateContest: React.FC = () => {
     setLoading(true);
     setError('');
 
-    // Validation
-    if (new Date(formData.startAt) >= new Date(formData.endAt)) {
-      setError('Start time must be before end time');
+    // datetime-local input gives us "YYYY-MM-DDTHH:MM" in LOCAL time (no timezone info)
+    // new Date() will parse this as local time
+    const startDate = new Date(formData.startAt);
+    const endDate = new Date(formData.endAt);
+    const now = new Date();
+
+    console.log('🕐 Time Debug:');
+    console.log('  Input strings:', { startAt: formData.startAt, endAt: formData.endAt });
+    console.log('  Parsed as local:', { 
+      start: startDate.toString(), 
+      end: endDate.toString() 
+    });
+    console.log('  Converted to ISO (UTC):', { 
+      start: startDate.toISOString(), 
+      end: endDate.toISOString() 
+    });
+    console.log('  Timezone offset (minutes):', new Date().getTimezoneOffset());
+
+    // Validation - allow immediate start but prevent past dates
+    if (startDate < now) {
+      setError('Contest start time cannot be in the past');
+      setLoading(false);
+      return;
+    }
+
+    if (startDate >= endDate) {
+      setError('End time must be after start time');
+      setLoading(false);
+      return;
+    }
+
+    // Check if contest duration exceeds 24 hours
+    const durationInHours = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60);
+    if (durationInHours > 24) {
+      setError('Contest duration cannot exceed 24 hours');
       setLoading(false);
       return;
     }
 
     try {
-      await contestsAPI.create(formData);
+      // Prepare questions data
+      const questionsData = importedQuestions.map(q => ({
+        id: String(q.id), // Convert to string to match database UUID type
+        points: q.points || 10,
+        timeLimit: q.timeLimit || 120
+      }));
+
+      // Send ISO strings (UTC) to backend
+      const payload = {
+        title: formData.title,
+        description: formData.description,
+        startAt: startDate.toISOString(),
+        endAt: endDate.toISOString(),
+        questions: questionsData
+      };
+
+      console.log('📤 Payload to backend:', payload);
+
+      await contestsAPI.create(payload);
+      
+      // Clear localStorage after successful creation
+      localStorage.removeItem('imported_questions');
+      
       navigate('/admin/contests');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to create contest');
@@ -77,6 +144,12 @@ const CreateContest: React.FC = () => {
       ...formData,
       [e.target.name]: e.target.value,
     });
+  };
+
+  const handleDeleteQuestion = (questionId: string) => {
+    const updatedQuestions = importedQuestions.filter(q => q.id !== questionId);
+    setImportedQuestions(updatedQuestions);
+    localStorage.setItem('imported_questions', JSON.stringify(updatedQuestions));
   };
 
   return (
@@ -131,12 +204,13 @@ const CreateContest: React.FC = () => {
                   name="startAt"
                   value={formData.startAt}
                   onChange={handleChange}
+                  min={toDateTimeLocalString(new Date())}
                   required
                 />
               </div>
               <div>
                 <label htmlFor="endAt" className="block text-sm font-medium text-zinc-300 mb-2">
-                  End date
+                  End date (max 24 hours from start)
                 </label>
                 <Input
                   type="datetime-local"
@@ -144,6 +218,8 @@ const CreateContest: React.FC = () => {
                   name="endAt"
                   value={formData.endAt}
                   onChange={handleChange}
+                  min={formData.startAt || toDateTimeLocalString(new Date())}
+                  max={formData.startAt ? toDateTimeLocalString(new Date(new Date(formData.startAt).getTime() + 24 * 60 * 60 * 1000)) : undefined}
                   required
                 />
               </div>
@@ -191,6 +267,14 @@ const CreateContest: React.FC = () => {
                         <Badge variant="default" className="text-xs">🏆 10 points</Badge>
                       </div>
                     </div>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => handleDeleteQuestion(question.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 ))}
               </div>
