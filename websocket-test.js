@@ -11,14 +11,14 @@ if (!JWT) {
   process.exit(1);
 }
 
-const ws = new WebSocket(`ws://localhost:3000/ws/contest?token=${JWT}`);
+const ws = new WebSocket(`ws://localhost:3001/ws/contest?token=${JWT}`);
 
 let questionReceived = false;
 let submittedAnswer = false;
 
 ws.on('open', () => {
-  console.log('✅ WebSocket connected successfully\n');
-  console.log('📤 Sending join_contest event...');
+  console.log('WebSocket connected successfully\n');
+  console.log('Sending join_contest event...');
   
   ws.send(JSON.stringify({
     event: 'join_contest',
@@ -32,20 +32,23 @@ ws.on('message', (data) => {
   const message = JSON.parse(data.toString());
   const timestamp = new Date().toISOString();
   
-  console.log(`\n[${timestamp}] 📨 Received: ${message.event}`);
+  console.log(`\n[${timestamp}]  Received: ${message.event}`);
   console.log(JSON.stringify(message, null, 2));
   
   // Auto-submit answer when question is broadcast
   if (message.event === 'question_broadcast' && !submittedAnswer) {
     questionReceived = true;
-    console.log('\n⏱️  Waiting 2 seconds before submitting answer...');
+    console.log('\n  Waiting 2 seconds before submitting answer...');
+    
+    // Handle both old (payload.question.id) and new (data.questionId) formats
+    const questionId = message.data?.questionId || message.payload?.question?.id;
     
     setTimeout(() => {
-      console.log(`\n📤 Submitting answer (optionId: ${CORRECT_OPTION_ID})...`);
+      console.log(`\n Submitting answer (questionId: ${questionId}, optionId: ${CORRECT_OPTION_ID})...`);
       ws.send(JSON.stringify({
         event: 'submit_answer',
         data: {
-          questionId: message.payload.question.id,
+          questionId: questionId,
           selectedOptionId: CORRECT_OPTION_ID,
           submittedAt: new Date().toISOString()
         }
@@ -65,14 +68,14 @@ ws.on('message', (data) => {
 });
 
 ws.on('error', (error) => {
-  console.error('❌ WebSocket error:', error.message);
+  console.error(' WebSocket error:', error.message);
   process.exit(1);
 });
 
 ws.on('close', (code, reason) => {
   console.log(`\n🔌 WebSocket closed with code ${code}: ${reason || 'No reason provided'}`);
   if (code !== 1000) {
-    console.error('❌ Unexpected close code');
+    console.error(' Unexpected close code');
     process.exit(1);
   }
 });
@@ -84,4 +87,4 @@ setTimeout(() => {
   process.exit(1);
 }, 120000);
 
-console.log('🔄 Connecting to ws://localhost:3000/ws/contest...');
+console.log('🔄 Connecting to ws://localhost:3001/ws/contest...');

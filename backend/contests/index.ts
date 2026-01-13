@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../../db/prismaClient";
-import { authenticateToken, AuthRequest } from "../middleware/auth";
+import { authenticateToken, type AuthRequest } from "../middleware/auth";
+import { ContestOrchestrator } from "../services/contest.orchestrator";
 
 const router = Router();
 
@@ -66,7 +67,7 @@ router.post("/", async (req, res) => {
     }
     
     // Determine status based on start time
-    let status = "UPCOMING";
+    let status: "UPCOMING" | "ACTIVE" | "COMPLETED" = "UPCOMING";
     if (startDate <= now && endDate > now) {
       status = "ACTIVE";
     } else if (endDate <= now) {
@@ -97,6 +98,15 @@ router.post("/", async (req, res) => {
         }
       }
     });
+    
+    // If contest is starting now (ACTIVE), start the orchestrator
+    if (status === "ACTIVE") {
+      const orchestrator = ContestOrchestrator.getInstance();
+      if (orchestrator) {
+        await orchestrator.startContest(contest.id);
+        console.log(`🚀 Started orchestrator for newly created ACTIVE contest: ${contest.id}`);
+      }
+    }
     
     res.status(201).json(contest);
   } catch (error) {

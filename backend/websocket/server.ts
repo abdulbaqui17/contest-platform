@@ -178,7 +178,7 @@ export class ContestWebSocketServer {
         actualStatus = "UPCOMING";
       }
 
-      console.log('🕐 Contest join attempt:', {
+      console.log('Contest join attempt:', {
         contestId,
         userId: ws.client.userId,
         dbStatus: contest.status,
@@ -189,6 +189,12 @@ export class ContestWebSocketServer {
       });
 
       // Validate contest is active (based on time, not just DB status)
+      if (actualStatus === "COMPLETED") {
+        // Send contest completed state
+        this.sendContestCompleted(ws, contestId, ws.client.userId);
+        return;
+      }
+
       if (actualStatus !== "ACTIVE") {
         this.sendError(
           ws,
@@ -214,15 +220,148 @@ export class ContestWebSocketServer {
         return;
       }
 
+      // Check if user has already completed all questions
+      const hasCompleted = await this.hasUserCompletedContest(contestId, ws.client.userId);
+      if (hasCompleted) {
+        this.sendContestCompleted(ws, contestId, ws.client.userId, true);
+        return;
+      }
+
       // Add to contest room
       ws.client.contestId = contestId;
       this.addToRoom(contestId, ws);
 
-      console.log(`✅ User ${ws.client.userId} successfully joined contest ${contestId}`);
+      console.log(`User ${ws.client.userId} successfully joined contest ${contestId}`);
+
+      // CRITICAL: Send current state to late joiner
+      await this.sendCurrentStateToUser(ws, contestId);
     } catch (error) {
       console.error("Error in join_contest:", error);
       this.sendError(ws, WebSocketErrorCode.SERVER_ERROR, "Failed to join contest");
     }
+  }
+
+  // Send current contest state to a user (for late joiners / resync)
+  private async sendCurrentStateToUser(ws: ExtendedWebSocket, contestId: string) {
+    if (!ws.client) return;
+
+    try {
+      // Get current question from orchestrator
+      const currentQuestion = await this.contestService.getCurrentQuestion(
+        contestId,
+        ws.client.userId
+      );
+
+      if (currentQuestion) {
+        console.log(`📤 Sending current question to late joiner: ${ws.client.userId}`, {
+          questionNumber: currentQuestion.questionNumber,
+          totalQuestions: currentQuestion.totalQuestions
+        });
+
+        // Send question broadcast
+        this.sendToClient(ws, {
+          event: "question_broadcast",
+          data: currentQuestion,
+          timestamp: new Date().toISOString(),
+        });
+
+        // Get remaining time from timer service
+        const timeRemaining = this.timerService.getRemainingTime(
+          contestId,
+          currentQuestion.questionId
+        );
+
+        // If timer service doesn't have it, calculate from orchestrator data
+        const contestState = await this.contestService.getContestState(contestId);
+        const actualTimeRemaining = timeRemaining ?? contestState.timerRemaining ?? currentQuestion.timeLimit;
+
+        // Send timer update
+        this.sendToClient(ws, {
+          event: "timer_update",
+          data: {
+            questionId: currentQuestion.questionId,
+            timeRemaining: actualTimeRemaining,
+            totalTime: currentQuestion.timeLimit,
+          },
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      // Send leaderboard update
+      await this.sendLeaderboardUpdate(ws, contestId);
+    } catch (error) {
+      console.error("Error sending current state:", error);
+    }
+  }
+
+  // Check if user has completed all questions
+  private async hasUserCompletedContest(contestId: string, userId: string): Promise<boolean> {
+    // Import prisma for direct query
+    const { prisma } = await import("../../db/prismaClient");
+    
+    const totalQuestions = await prisma.contestQuestion.count({
+      where: { contestId }
+    });
+
+    const userSubmissions = await prisma.submission.count({
+      where: { contestId, userId }
+    });
+
+    return userSubmissions >= totalQuestions && totalQuestions > 0;
+  }
+
+  // Send contest completed state
+  private async sendContestCompleted(ws: ExtendedWebSocket, contestId: string, userId: string, alreadyCompleted: boolean = false) {
+    const { prisma } = await import("../../db/prismaClient");
+    
+    // Get user's submissions with question points
+    const submissions = await prisma.submission.findMany({
+      where: { contestId, userId },
+      include: {
+        question: {
+          include: {
+            contests: {
+              where: { contestId }
+            }
+          }
+        }
+      }
+    });
+
+    // Calculate score based on correct answers and question points
+    let totalScore = 0;
+    let correctAnswers = 0;
+    for (const s of submissions) {
+      if (s.isCorrect) {
+        correctAnswers++;
+        // Get points from ContestQuestion
+        const contestQuestion = s.question.contests[0];
+        totalScore += contestQuestion?.points || 10; // Default 10 points
+      }
+    }
+
+    // Get rank from leaderboard snapshot or calculate
+    const leaderboardEntry = await prisma.leaderboardSnapshot.findFirst({
+      where: { contestId, userId }
+    });
+
+    this.sendToClient(ws, {
+      event: "contest_end",
+      data: {
+        contestId,
+        message: alreadyCompleted 
+          ? "You have already completed this contest"
+          : "Contest has ended",
+        userFinalRank: {
+          rank: leaderboardEntry?.rank || 0,
+          score: totalScore,
+          questionsAnswered: submissions.length,
+          correctAnswers,
+        },
+        alreadyCompleted,
+      },
+      timestamp: new Date().toISOString(),
+    });
   }
 
   // Handler: submit_answer
@@ -303,44 +442,38 @@ export class ContestWebSocketServer {
     try {
       const contestState = await this.contestService.getContestState(contestId);
 
+      console.log(`🔄 Resync request from ${ws.client.userId} for contest ${contestId}, status: ${contestState.status}`);
+
       if (contestState.status === "ACTIVE") {
-        // Send current question
-        const currentQuestion = await this.contestService.getCurrentQuestion(
-          contestId,
-          ws.client.userId
-        );
-
-        if (currentQuestion) {
-          this.sendToClient(ws, {
-            event: "question_broadcast",
-            data: currentQuestion,
-            timestamp: new Date().toISOString(),
-          });
-
-          // Send current timer
-          const timeRemaining = this.timerService.getRemainingTime(
-            contestId,
-            currentQuestion.questionId
-          );
-
-          if (timeRemaining !== null) {
-            this.sendToClient(ws, {
-              event: "timer_update",
-              data: {
-                questionId: currentQuestion.questionId,
-                timeRemaining,
-                totalTime: currentQuestion.timeLimit,
-              },
-              timestamp: new Date().toISOString(),
-            });
-          }
+        // Ensure user is in room
+        if (!ws.client.contestId) {
+          ws.client.contestId = contestId;
+          this.addToRoom(contestId, ws);
         }
 
-        // Send latest leaderboard
-        await this.sendLeaderboardUpdate(ws, contestId);
+        // Check if user already completed
+        const hasCompleted = await this.hasUserCompletedContest(contestId, ws.client.userId);
+        if (hasCompleted) {
+          this.sendContestCompleted(ws, contestId, ws.client.userId, true);
+          return;
+        }
+
+        // Send current state
+        await this.sendCurrentStateToUser(ws, contestId);
       } else if (contestState.status === "COMPLETED") {
-        // Contest ended, send contest_end event
-        // This would be handled by contest end logic
+        // Contest ended, send completion state
+        this.sendContestCompleted(ws, contestId, ws.client.userId);
+      } else {
+        // Contest not started yet
+        this.sendToClient(ws, {
+          event: "contest_status",
+          data: {
+            contestId,
+            status: contestState.status,
+            message: `Contest is ${contestState.status}`,
+          },
+          timestamp: new Date().toISOString(),
+        });
       }
     } catch (error) {
       console.error("Error in resync:", error);

@@ -16,9 +16,13 @@ interface ContestState {
     points: number;
   }>;
   currentQuestionIndex: number;
+  currentQuestionStartTime: number; // timestamp when current question started
   timerInterval: NodeJS.Timeout | null;
   questionTimeout: NodeJS.Timeout | null;
 }
+
+// Singleton instance for global access
+let orchestratorInstance: ContestOrchestrator | null = null;
 
 export class ContestOrchestrator {
   private activeContests: Map<string, ContestState> = new Map();
@@ -27,7 +31,47 @@ export class ContestOrchestrator {
     private readonly contestService: ContestService,
     private readonly leaderboardService: LeaderboardService,
     private readonly eventEmitter: ContestEventEmitter
-  ) {}
+  ) {
+    orchestratorInstance = this;
+  }
+
+  // Static method to get singleton instance
+  static getInstance(): ContestOrchestrator | null {
+    return orchestratorInstance;
+  }
+
+  // Get current question for a contest (for late joiners)
+  getCurrentQuestionData(contestId: string): {
+    question: any;
+    questionNumber: number;
+    totalQuestions: number;
+    remainingTime: number;
+  } | null {
+    const state = this.activeContests.get(contestId);
+    if (!state || state.currentQuestionIndex < 0) {
+      return null;
+    }
+
+    const question = state.questions[state.currentQuestionIndex];
+    if (!question) {
+      return null;
+    }
+
+    const elapsed = Math.floor((Date.now() - state.currentQuestionStartTime) / 1000);
+    const remainingTime = Math.max(0, question.timeLimit - elapsed);
+
+    return {
+      question,
+      questionNumber: state.currentQuestionIndex + 1,
+      totalQuestions: state.questions.length,
+      remainingTime,
+    };
+  }
+
+  // Check if contest is being orchestrated
+  isContestActive(contestId: string): boolean {
+    return this.activeContests.has(contestId);
+  }
 
   async startContest(contestId: string): Promise<void> {
     if (this.activeContests.has(contestId)) {
@@ -35,12 +79,29 @@ export class ContestOrchestrator {
     }
 
     const contest = await this.contestService.getContest(contestId);
-    if (!contest || contest.status !== "ACTIVE") {
+    if (!contest) {
+      return;
+    }
+
+    // Check time-based status (allow 2 second tolerance for contests about to start)
+    const now = new Date();
+    const startAt = new Date(contest.startAt);
+    const endAt = new Date(contest.endAt);
+    const startTolerance = 2000; // 2 seconds
+    
+    if (endAt <= now) {
+      console.log(`Contest ${contestId} has already ended`);
+      return;
+    }
+    
+    if (startAt.getTime() > now.getTime() + startTolerance) {
+      console.log(`Contest ${contestId} has not started yet (starts at ${startAt.toISOString()})`);
       return;
     }
 
     const questions = await this.getOrderedQuestions(contestId);
     if (questions.length === 0) {
+      console.log(`Contest ${contestId} has no questions`);
       return;
     }
 
@@ -48,11 +109,13 @@ export class ContestOrchestrator {
       contestId,
       questions,
       currentQuestionIndex: -1,
+      currentQuestionStartTime: 0,
       timerInterval: null,
       questionTimeout: null,
     };
 
     this.activeContests.set(contestId, state);
+    console.log(` ContestOrchestrator: Starting contest ${contestId} with ${questions.length} questions`);
     this.emitContestStart(contest);
     this.startNextQuestion(state);
   }
@@ -115,6 +178,8 @@ export class ContestOrchestrator {
       return;
     }
 
+    state.currentQuestionStartTime = Date.now(); // Track when question started
+    console.log(` Broadcasting question ${state.currentQuestionIndex + 1}/${state.questions.length} for contest ${state.contestId}`);
     this.emitQuestionBroadcast(state.contestId, question, state.currentQuestionIndex + 1);
     this.startQuestionTimer(state, question);
   }

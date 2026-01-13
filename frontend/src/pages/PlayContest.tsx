@@ -28,21 +28,33 @@ interface SubmissionResult {
   currentRank: number;
 }
 
+interface FinalResult {
+  rank: number;
+  score: number;
+  questionsAnswered: number;
+  correctAnswers?: number;
+}
+
 const PlayContest: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [ws, setWs] = useState<WebSocket | null>(null);
+  const [connected, setConnected] = useState(false);
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
   const [timeRemaining, setTimeRemaining] = useState<number>(0);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submissionResult, setSubmissionResult] = useState<SubmissionResult | null>(null);
   const [contestEnded, setContestEnded] = useState(false);
+  const [alreadyCompleted, setAlreadyCompleted] = useState(false);
+  const [finalResult, setFinalResult] = useState<FinalResult | null>(null);
   const [currentRank, setCurrentRank] = useState<number>(0);
   const [currentScore, setCurrentScore] = useState<number>(0);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 5;
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     connectWebSocket();
@@ -50,41 +62,65 @@ const PlayContest: React.FC = () => {
       if (ws) {
         ws.close(1000);
       }
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
     };
   }, [id]);
+
+  // Local timer countdown (backup for when server timer updates are delayed)
+  useEffect(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+
+    if (timeRemaining > 0 && currentQuestion && !contestEnded) {
+      timerRef.current = setInterval(() => {
+        setTimeRemaining(prev => {
+          if (prev <= 1) {
+            if (timerRef.current) clearInterval(timerRef.current);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [currentQuestion?.questionId, contestEnded]);
 
   const connectWebSocket = () => {
     const token = localStorage.getItem('token');
     if (!token) {
-      setError('No authentication token found');
+      setError('No authentication token found. Please sign in.');
+      setLoading(false);
       return;
     }
 
     const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
     const wsUrl = `${WS_URL}/ws/contest?token=${token}`;
+    
+    console.log('🔌 Connecting to WebSocket:', wsUrl);
     const websocket = new WebSocket(wsUrl);
 
     websocket.onopen = () => {
-      console.log('WebSocket connected');
+      console.log('✅ WebSocket connected');
+      setConnected(true);
       reconnectAttempts.current = 0;
       
-      // Send join_contest or resync
-      if (currentQuestion) {
-        websocket.send(JSON.stringify({
-          event: 'resync',
-          data: { contestId: id }
-        }));
-      } else {
-        websocket.send(JSON.stringify({
-          event: 'join_contest',
-          data: { contestId: id }
-        }));
-      }
+      // Always send join_contest first - server will handle state
+      websocket.send(JSON.stringify({
+        event: 'join_contest',
+        data: { contestId: id }
+      }));
     };
 
     websocket.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
+        console.log('📩 WebSocket message:', message.event, message.data);
         handleWebSocketMessage(message);
       } catch (err) {
         console.error('Failed to parse message:', err);
@@ -93,13 +129,16 @@ const PlayContest: React.FC = () => {
 
     websocket.onerror = (err) => {
       console.error('WebSocket error:', err);
-      setError('Connection error');
     };
 
     websocket.onclose = (event) => {
-      console.log('WebSocket closed:', event.code);
-      if (event.code !== 1000 && reconnectAttempts.current < maxReconnectAttempts) {
+      console.log('🔌 WebSocket closed:', event.code, event.reason);
+      setConnected(false);
+      
+      // Don't reconnect if closed normally or user left
+      if (event.code !== 1000 && reconnectAttempts.current < maxReconnectAttempts && !contestEnded) {
         reconnectAttempts.current++;
+        console.log(`🔄 Reconnecting... attempt ${reconnectAttempts.current}`);
         setTimeout(() => connectWebSocket(), 2000 * reconnectAttempts.current);
       }
     };
@@ -108,8 +147,11 @@ const PlayContest: React.FC = () => {
   };
 
   const handleWebSocketMessage = (message: any) => {
+    setLoading(false); // We got a response, no longer loading
+
     switch (message.event) {
       case 'question_broadcast':
+        console.log('📝 Received question:', message.data.questionNumber, 'of', message.data.totalQuestions);
         setCurrentQuestion({
           questionId: message.data.questionId,
           title: message.data.title,
@@ -143,25 +185,49 @@ const PlayContest: React.FC = () => {
         break;
 
       case 'leaderboard_update':
-        // Update rank if provided
-        if (message.data.userRank) {
-          setCurrentRank(message.data.userRank);
+        if (message.data.userEntry) {
+          setCurrentRank(message.data.userEntry.rank);
+          setCurrentScore(message.data.userEntry.score);
         }
         break;
 
+      case 'question_change':
+        // Brief pause before next question
+        console.log('⏭️ Question changing:', message.data.message);
+        break;
+
       case 'contest_end':
+        console.log('🏁 Contest ended:', message.data);
         setContestEnded(true);
         setCurrentQuestion(null);
+        if (message.data.alreadyCompleted) {
+          setAlreadyCompleted(true);
+        }
+        if (message.data.userFinalRank) {
+          setFinalResult(message.data.userFinalRank);
+        }
+        break;
+
+      case 'contest_status':
+        console.log('📊 Contest status:', message.data.status);
+        if (message.data.status === 'UPCOMING') {
+          setError(`Contest hasn't started yet`);
+        }
         break;
 
       case 'error':
+        console.error('❌ Server error:', message.data);
         setError(message.data.message);
+        break;
+
+      case 'pong':
+        // Heartbeat response
         break;
     }
   };
 
   const handleSubmit = () => {
-    if (!ws || !currentQuestion || !selectedOption || submitting) return;
+    if (!ws || !currentQuestion || !selectedOption || submitting || submissionResult) return;
 
     setSubmitting(true);
     ws.send(JSON.stringify({
@@ -174,6 +240,16 @@ const PlayContest: React.FC = () => {
     }));
   };
 
+  const handleResync = () => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        event: 'resync',
+        data: { contestId: id }
+      }));
+    }
+  };
+
+  // Error state
   if (error) {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
@@ -192,7 +268,8 @@ const PlayContest: React.FC = () => {
     );
   }
 
-  if (contestEnded) {
+  // Contest ended or already completed state
+  if (contestEnded || alreadyCompleted) {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
         <Card className="max-w-md w-full">
@@ -200,15 +277,34 @@ const PlayContest: React.FC = () => {
             <div className="h-16 w-16 rounded-full bg-purple-500/20 flex items-center justify-center mx-auto mb-6">
               <Trophy className="h-8 w-8 text-purple-400" />
             </div>
-            <h2 className="text-2xl font-bold text-zinc-100 mb-4">Contest Ended!</h2>
-            {submissionResult && (
-              <div className="space-y-2 mb-6">
-                <p className="text-lg text-zinc-300">
-                  Final Score: <span className="text-purple-400 font-bold">{submissionResult.currentScore}</span>
-                </p>
-                <p className="text-lg text-zinc-300">
-                  Final Rank: <span className="text-yellow-400 font-bold">#{submissionResult.currentRank}</span>
-                </p>
+            <h2 className="text-2xl font-bold text-zinc-100 mb-2">
+              {alreadyCompleted ? 'Contest Already Completed' : 'Contest Ended!'}
+            </h2>
+            {alreadyCompleted && (
+              <p className="text-zinc-400 mb-4">
+                You have already submitted all answers for this contest.
+              </p>
+            )}
+            {finalResult && (
+              <div className="space-y-3 mb-6 p-4 bg-zinc-900 rounded-lg">
+                <div className="flex justify-between items-center">
+                  <span className="text-zinc-400">Final Score</span>
+                  <span className="text-2xl font-bold text-purple-400">{finalResult.score}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-zinc-400">Final Rank</span>
+                  <span className="text-2xl font-bold text-yellow-400">#{finalResult.rank || '-'}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-zinc-400">Questions Answered</span>
+                  <span className="text-lg text-zinc-100">{finalResult.questionsAnswered}</span>
+                </div>
+                {finalResult.correctAnswers !== undefined && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-zinc-400">Correct Answers</span>
+                    <span className="text-lg text-green-400">{finalResult.correctAnswers}</span>
+                  </div>
+                )}
               </div>
             )}
             <Button onClick={() => navigate('/contests')} variant="primary" size="lg" className="w-full">
@@ -220,12 +316,20 @@ const PlayContest: React.FC = () => {
     );
   }
 
-  if (!currentQuestion) {
+  // Loading state - waiting for contest data
+  if (loading || !currentQuestion) {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="h-8 w-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-zinc-400">Waiting for contest to start...</p>
+          <p className="text-zinc-400">
+            {connected ? 'Loading contest...' : 'Connecting to server...'}
+          </p>
+          {connected && !currentQuestion && (
+            <Button onClick={handleResync} variant="secondary" size="sm" className="mt-4">
+              Refresh State
+            </Button>
+          )}
         </div>
       </div>
     );
