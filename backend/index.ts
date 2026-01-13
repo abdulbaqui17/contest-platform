@@ -4,6 +4,7 @@ import { createServer } from "http";
 import cors from "cors";
 import authRoutes from "./auth";
 import contestRoutes from "./contests";
+import questionRoutes from "./questions";
 import { ContestWebSocketServer } from "./websocket/server";
 import {
   MockContestService,
@@ -30,6 +31,7 @@ app.use("/auth", authRoutes);
 app.use("/contests", contestRoutes);
 app.use("/contest", contestRoutes);
 app.use("/leaderboard", contestRoutes);
+app.use("/questions", questionRoutes);
 
 // Health check endpoint for Docker
 app.get("/health", (req, res) => {

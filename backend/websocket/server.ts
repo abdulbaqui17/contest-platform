@@ -164,12 +164,36 @@ export class ContestWebSocketServer {
         return;
       }
 
-      // Validate contest is active or upcoming
-      if (contest.status !== "ACTIVE" && contest.status !== "UPCOMING") {
+      // Dynamically determine contest status based on current time
+      const now = new Date();
+      const startAt = new Date(contest.startAt);
+      const endAt = new Date(contest.endAt);
+      
+      let actualStatus = contest.status;
+      if (endAt <= now) {
+        actualStatus = "COMPLETED";
+      } else if (startAt <= now && endAt > now) {
+        actualStatus = "ACTIVE";
+      } else if (startAt > now) {
+        actualStatus = "UPCOMING";
+      }
+
+      console.log('🕐 Contest join attempt:', {
+        contestId,
+        userId: ws.client.userId,
+        dbStatus: contest.status,
+        calculatedStatus: actualStatus,
+        now: now.toISOString(),
+        startAt: startAt.toISOString(),
+        endAt: endAt.toISOString()
+      });
+
+      // Validate contest is active (based on time, not just DB status)
+      if (actualStatus !== "ACTIVE") {
         this.sendError(
           ws,
           WebSocketErrorCode.CONTEST_NOT_ACTIVE,
-          "Contest is not active"
+          `Contest is ${actualStatus}. Contest starts at ${startAt.toLocaleString()} and ends at ${endAt.toLocaleString()}.`
         );
         ws.close(WebSocketCloseCode.NORMAL_CLOSURE);
         return;
@@ -194,7 +218,7 @@ export class ContestWebSocketServer {
       ws.client.contestId = contestId;
       this.addToRoom(contestId, ws);
 
-      console.log(`User ${ws.client.userId} joined contest ${contestId}`);
+      console.log(`✅ User ${ws.client.userId} successfully joined contest ${contestId}`);
     } catch (error) {
       console.error("Error in join_contest:", error);
       this.sendError(ws, WebSocketErrorCode.SERVER_ERROR, "Failed to join contest");
