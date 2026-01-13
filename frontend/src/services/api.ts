@@ -18,7 +18,7 @@ const api = axios.create({
 
 // Add JWT token to requests
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('admin_token');
+  const token = localStorage.getItem('token') || localStorage.getItem('admin_token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -75,6 +75,17 @@ export const questionsAPI = {
 
   create: async (contestId: string, data: CreateQuestionRequest): Promise<QuestionDetail> => {
     const response = await api.post(`/contests/${contestId}/questions`, data);
+    return response.data;
+  },
+
+  // Create standalone question (not tied to contest yet)
+  createStandalone: async (data: CreateQuestionRequest): Promise<any> => {
+    const response = await api.post('/questions', data);
+    return response.data;
+  },
+
+  getAllStandalone: async (): Promise<any[]> => {
+    const response = await api.get('/questions');
     return response.data;
   },
 };
