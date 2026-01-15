@@ -19,10 +19,37 @@ interface ContestState {
   currentQuestionStartTime: number; // timestamp when current question started
   timerInterval: NodeJS.Timeout | null;
   questionTimeout: NodeJS.Timeout | null;
+  // Track submissions for current question to enable early advancement
+  submittedUsers: Set<string>;
+  totalParticipants: number;
 }
+
+// Runtime state type - derived from timestamps, NOT from DB status
+export type RuntimeState = "UPCOMING" | "ACTIVE" | "COMPLETED";
 
 // Singleton instance for global access
 let orchestratorInstance: ContestOrchestrator | null = null;
+
+// Track scheduled contest starts
+const scheduledStarts: Map<string, NodeJS.Timeout> = new Map();
+
+/**
+ * CRITICAL: Derive runtime state from timestamps, NOT from DB status.
+ * This is the ONLY source of truth for contest state.
+ */
+export function getRuntimeState(startAt: Date, endAt: Date): RuntimeState {
+  const now = new Date();
+  if (now < startAt) return "UPCOMING";
+  if (now >= startAt && now <= endAt) return "ACTIVE";
+  return "COMPLETED";
+}
+
+/**
+ * Get milliseconds until contest starts (for scheduling)
+ */
+export function getMillisUntilStart(startAt: Date): number {
+  return Math.max(0, startAt.getTime() - Date.now());
+}
 
 export class ContestOrchestrator {
   private activeContests: Map<string, ContestState> = new Map();
@@ -73,37 +100,142 @@ export class ContestOrchestrator {
     return this.activeContests.has(contestId);
   }
 
+  /**
+   * CRITICAL: Record a user's submission for the current question.
+   * Called by WebSocket handler after successful submission.
+   * 
+   * If all participants have submitted, immediately advance to next question.
+   * This ensures users don't wait unnecessarily for the full timer.
+   */
+  recordSubmission(contestId: string, userId: string, questionId: string): void {
+    const state = this.activeContests.get(contestId);
+    if (!state) {
+      console.log(`⚠️ recordSubmission: Contest ${contestId} not active`);
+      return;
+    }
+
+    const currentQuestion = state.questions[state.currentQuestionIndex];
+    if (!currentQuestion || currentQuestion.id !== questionId) {
+      console.log(`⚠️ recordSubmission: Question ${questionId} is not the current question`);
+      return;
+    }
+
+    // Record this user's submission
+    state.submittedUsers.add(userId);
+    
+    console.log(`📝 Submission recorded: ${state.submittedUsers.size}/${state.totalParticipants} for question ${state.currentQuestionIndex + 1}`);
+
+    // Check if ALL participants have submitted - if so, advance immediately!
+    if (state.submittedUsers.size >= state.totalParticipants && state.totalParticipants > 0) {
+      console.log(`🚀 All ${state.totalParticipants} participants submitted! Advancing to next question early.`);
+      this.advanceToNextQuestion(state);
+    }
+  }
+
+  /**
+   * Force advance to next question (used when all submit or timer expires)
+   */
+  private advanceToNextQuestion(state: ContestState): void {
+    // Clear existing timers to prevent double-advancement
+    if (state.timerInterval) {
+      clearInterval(state.timerInterval);
+      state.timerInterval = null;
+    }
+    if (state.questionTimeout) {
+      clearTimeout(state.questionTimeout);
+      state.questionTimeout = null;
+    }
+
+    // Clear submission tracking for next question
+    state.submittedUsers.clear();
+
+    // Process question end (broadcasts question_change and moves to next)
+    this.handleQuestionEnd(state);
+  }
+
+  /**
+   * Schedule a contest to start at its startAt time.
+   * This ensures UPCOMING contests will automatically start when they become ACTIVE.
+   */
+  scheduleContestStart(contestId: string, startAt: Date): void {
+    // Clear any existing scheduled start
+    const existingTimeout = scheduledStarts.get(contestId);
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+    }
+
+    const msUntilStart = getMillisUntilStart(startAt);
+    
+    if (msUntilStart <= 0) {
+      // Already should have started, start immediately
+      console.log(`⏰ Contest ${contestId} start time passed, starting now`);
+      this.startContest(contestId);
+      return;
+    }
+
+    console.log(`⏰ Scheduling contest ${contestId} to start in ${Math.round(msUntilStart / 1000)}s at ${startAt.toISOString()}`);
+    
+    const timeout = setTimeout(async () => {
+      scheduledStarts.delete(contestId);
+      console.log(`⏰ Scheduled start triggered for contest ${contestId}`);
+      await this.startContest(contestId);
+    }, msUntilStart);
+
+    scheduledStarts.set(contestId, timeout);
+  }
+
+  /**
+   * CRITICAL: Start contest with proper runtime state validation.
+   * Contest MUST only start when runtime state is ACTIVE.
+   * If UPCOMING, schedule a delayed start.
+   */
   async startContest(contestId: string): Promise<void> {
     if (this.activeContests.has(contestId)) {
+      console.log(`Contest ${contestId} is already running`);
       return;
     }
 
     const contest = await this.contestService.getContest(contestId);
     if (!contest) {
+      console.log(`Contest ${contestId} not found`);
       return;
     }
 
-    // Check time-based status (allow 2 second tolerance for contests about to start)
-    const now = new Date();
     const startAt = new Date(contest.startAt);
     const endAt = new Date(contest.endAt);
-    const startTolerance = 2000; // 2 seconds
-    
-    if (endAt <= now) {
-      console.log(`Contest ${contestId} has already ended`);
-      return;
-    }
-    
-    if (startAt.getTime() > now.getTime() + startTolerance) {
-      console.log(`Contest ${contestId} has not started yet (starts at ${startAt.toISOString()})`);
+    const runtimeState = getRuntimeState(startAt, endAt);
+
+    console.log(`🔍 Contest ${contestId} runtime state check:`, {
+      runtimeState,
+      dbStatus: contest.status,
+      now: new Date().toISOString(),
+      startAt: startAt.toISOString(),
+      endAt: endAt.toISOString()
+    });
+
+    if (runtimeState === "COMPLETED") {
+      console.log(`❌ Contest ${contestId} has already ended`);
       return;
     }
 
-    const questions = await this.getOrderedQuestions(contestId);
-    if (questions.length === 0) {
-      console.log(`Contest ${contestId} has no questions`);
+    if (runtimeState === "UPCOMING") {
+      // Schedule the contest to start at startAt
+      console.log(`⏳ Contest ${contestId} is UPCOMING, scheduling delayed start`);
+      this.scheduleContestStart(contestId, startAt);
       return;
     }
+
+    // Runtime state is ACTIVE - proceed to start
+    const questions = await this.getOrderedQuestions(contestId);
+    if (questions.length === 0) {
+      console.log(`❌ Contest ${contestId} has no questions`);
+      return;
+    }
+
+    // Get total participants for early advancement check
+    const participantCount = await prisma.contestParticipant.count({
+      where: { contestId }
+    });
 
     const state: ContestState = {
       contestId,
@@ -112,11 +244,15 @@ export class ContestOrchestrator {
       currentQuestionStartTime: 0,
       timerInterval: null,
       questionTimeout: null,
+      submittedUsers: new Set(),
+      totalParticipants: participantCount,
     };
 
     this.activeContests.set(contestId, state);
-    console.log(` ContestOrchestrator: Starting contest ${contestId} with ${questions.length} questions`);
+    console.log(`🚀 ContestOrchestrator: Starting contest ${contestId} with ${questions.length} questions, ${participantCount} participants`);
     this.emitContestStart(contest);
+    
+    // CRITICAL: Immediately start first question - ACTIVE contest MUST have a current question
     this.startNextQuestion(state);
   }
 
@@ -134,6 +270,49 @@ export class ContestOrchestrator {
     }
 
     this.activeContests.delete(contestId);
+    
+    // Clear any scheduled start
+    const scheduledTimeout = scheduledStarts.get(contestId);
+    if (scheduledTimeout) {
+      clearTimeout(scheduledTimeout);
+      scheduledStarts.delete(contestId);
+    }
+  }
+
+  /**
+   * CRITICAL: Ensure contest is running if it should be ACTIVE.
+   * This is called on user join/resync to handle edge cases where
+   * orchestrator might not have started the contest yet.
+   * 
+   * Returns the runtime state for the caller to use.
+   */
+  async ensureContestRunning(contestId: string): Promise<{
+    runtimeState: RuntimeState;
+    startAt: Date;
+    endAt: Date;
+  } | null> {
+    const contest = await this.contestService.getContest(contestId);
+    if (!contest) {
+      return null;
+    }
+
+    const startAt = new Date(contest.startAt);
+    const endAt = new Date(contest.endAt);
+    const runtimeState = getRuntimeState(startAt, endAt);
+
+    // If contest should be ACTIVE but isn't running, start it now
+    if (runtimeState === "ACTIVE" && !this.activeContests.has(contestId)) {
+      console.log(`⚡ Auto-starting contest ${contestId} - runtime is ACTIVE but orchestrator wasn't running`);
+      await this.startContest(contestId);
+    }
+
+    // If contest is UPCOMING and not scheduled, schedule it
+    if (runtimeState === "UPCOMING" && !scheduledStarts.has(contestId)) {
+      console.log(`⏰ Auto-scheduling contest ${contestId} - runtime is UPCOMING`);
+      this.scheduleContestStart(contestId, startAt);
+    }
+
+    return { runtimeState, startAt, endAt };
   }
 
   private async getOrderedQuestions(contestId: string) {
@@ -178,41 +357,47 @@ export class ContestOrchestrator {
       return;
     }
 
+    // CRITICAL: Reset submission tracking for new question
+    state.submittedUsers.clear();
+    
     state.currentQuestionStartTime = Date.now(); // Track when question started
-    console.log(` Broadcasting question ${state.currentQuestionIndex + 1}/${state.questions.length} for contest ${state.contestId}`);
+    console.log(`📢 Broadcasting question ${state.currentQuestionIndex + 1}/${state.questions.length} for contest ${state.contestId}`);
+    // CRITICAL: Await question broadcast to ensure mcqOptions are loaded
     this.emitQuestionBroadcast(state.contestId, question, state.currentQuestionIndex + 1);
     this.startQuestionTimer(state, question);
   }
 
-  private emitQuestionBroadcast(
+  private async emitQuestionBroadcast(
     contestId: string,
     question: any,
     questionNumber: number
-  ): void {
+  ): Promise<void> {
+    // CRITICAL: Load mcqOptions BEFORE broadcasting
     const mcqOptions = question.type === "MCQ"
-      ? prisma.mcqOption.findMany({ where: { questionId: question.id } }).then(opts =>
-          opts.map(opt => ({ id: opt.id, text: opt.text }))
-        )
-      : Promise.resolve([]);
+      ? await prisma.mcqOption.findMany({ 
+          where: { questionId: question.id },
+          select: { id: true, text: true }
+        }).then(opts => opts.map(opt => ({ id: opt.id, text: opt.text })))
+      : [];
 
-    mcqOptions.then(options => {
-      this.eventEmitter.broadcastToContest(contestId, {
-        event: "question_broadcast",
-        data: {
-          questionId: question.id,
-          contestQuestionId: question.id, // placeholder
-          type: question.type,
-          title: question.title,
-          description: question.description,
-          mcqOptions: options,
-          timeLimit: question.timeLimit,
-          points: question.points,
-          questionNumber,
-          totalQuestions: this.activeContests.get(contestId)?.questions.length || 0,
-          startedAt: new Date().toISOString(),
-        },
-        timestamp: new Date().toISOString(),
-      });
+    console.log(`📝 Broadcasting question ${questionNumber} with ${mcqOptions.length} MCQ options`);
+    
+    this.eventEmitter.broadcastToContest(contestId, {
+      event: "question_broadcast",
+      data: {
+        questionId: question.id,
+        contestQuestionId: question.id, // placeholder
+        type: question.type,
+        title: question.title,
+        description: question.description,
+        mcqOptions: mcqOptions,
+        timeLimit: question.timeLimit,
+        points: question.points,
+        questionNumber,
+        totalQuestions: this.activeContests.get(contestId)?.questions.length || 0,
+        startedAt: new Date().toISOString(),
+      },
+      timestamp: new Date().toISOString(),
     });
   }
 
@@ -245,29 +430,37 @@ export class ContestOrchestrator {
   }
 
   private handleQuestionEnd(state: ContestState): void {
+    // Clear timers (may already be cleared if called from advanceToNextQuestion)
     if (state.timerInterval) {
       clearInterval(state.timerInterval);
       state.timerInterval = null;
     }
+    if (state.questionTimeout) {
+      clearTimeout(state.questionTimeout);
+      state.questionTimeout = null;
+    }
 
     const currentQuestion = state.questions[state.currentQuestionIndex];
     const nextQuestion = state.questions[state.currentQuestionIndex + 1];
+
+    console.log(`⏭️ Question ${state.currentQuestionIndex + 1} ended for contest ${state.contestId}. Next: ${nextQuestion ? 'Question ' + (state.currentQuestionIndex + 2) : 'END'}`);
 
     this.eventEmitter.broadcastToContest(state.contestId, {
       event: "question_change",
       data: {
         previousQuestionId: currentQuestion.id,
         nextQuestionId: nextQuestion ? nextQuestion.id : null,
-        timeUntilNext: nextQuestion ? 5 : 0,
-        message: nextQuestion ? "Next question in 5 seconds..." : "Contest ending...",
+        timeUntilNext: nextQuestion ? 2 : 0, // Reduced from 5 to 2 seconds for better UX
+        message: nextQuestion ? "Next question in 2 seconds..." : "Contest ending...",
       },
       timestamp: new Date().toISOString(),
     });
 
     if (nextQuestion) {
-      setTimeout(() => this.startNextQuestion(state), 5000);
+      // Reduced delay from 5 seconds to 2 seconds for snappier progression
+      setTimeout(() => this.startNextQuestion(state), 2000);
     } else {
-      setTimeout(() => this.endContest(state), 5000);
+      setTimeout(() => this.endContest(state), 2000);
     }
   }
 
