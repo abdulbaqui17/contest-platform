@@ -5,8 +5,10 @@ export interface ContestStartEvent {
   event: "contest_start";
   data: {
     contestId: string;
+    contestName?: string;  // For UPCOMING countdown display
     title: string;
     startTime: string;
+    countdownToStart?: number;  // Seconds until contest starts (for UPCOMING)
     totalQuestions: number;
     estimatedDuration: number;
   };
