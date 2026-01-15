@@ -8,6 +8,7 @@ export interface ContestService {
     status: string;
     startAt: Date;
     endAt: Date;
+    questions?: Array<{ id: string }>;  // For counting total questions
   } | null>;
 
   isUserParticipant(contestId: string, userId: string): Promise<boolean>;
