@@ -1,5 +1,6 @@
 import { prisma } from "../../db/prismaClient";
 import type { LeaderboardService } from "./interfaces";
+import { getRuntimeState } from "./contest.orchestrator";
 
 export class PrismaSubmissionService {
   constructor(private readonly leaderboardService: LeaderboardService) {}
@@ -33,13 +34,18 @@ export class PrismaSubmissionService {
     currentScore: number;
     currentRank: number;
   }> {
-    // Validate contest is ACTIVE
+    // CRITICAL: Validate contest is ACTIVE using runtime state (timestamps), NOT DB status
     const contest = await prisma.contest.findUnique({
       where: { id: data.contestId },
     });
 
-    if (!contest || contest.status !== "ACTIVE") {
-      throw new Error("CONTEST_NOT_ACTIVE");
+    if (!contest) {
+      throw new Error("CONTEST_NOT_FOUND");
+    }
+
+    const runtimeState = getRuntimeState(contest.startAt, contest.endAt);
+    if (runtimeState !== "ACTIVE") {
+      throw new Error(`CONTEST_NOT_ACTIVE: runtime state is ${runtimeState}`);
     }
 
     // Validate user has joined contest
