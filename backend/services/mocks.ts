@@ -5,7 +5,7 @@ import type {
   SubmissionService,
   TimerService,
 } from "./interfaces";
-import { ContestOrchestrator } from "./contest.orchestrator";
+import { ContestOrchestrator, getRuntimeState, type RuntimeState } from "./contest.orchestrator";
 import { redis } from "../redis";
 
 export class MockContestService implements ContestService {
@@ -97,29 +97,23 @@ export class MockContestService implements ContestService {
     });
 
     if (!contest) {
-      return { status: "NOT_FOUND" };
+      return { status: "NOT_FOUND" as const };
     }
 
-    // Calculate actual status based on time
-    const now = new Date();
+    // CRITICAL: Calculate runtime state from timestamps, NOT DB status
     const startAt = new Date(contest.startAt);
     const endAt = new Date(contest.endAt);
-    
-    let status = contest.status;
-    if (endAt <= now) {
-      status = "COMPLETED";
-    } else if (startAt <= now && endAt > now) {
-      status = "ACTIVE";
-    } else if (startAt > now) {
-      status = "UPCOMING";
-    }
+    const runtimeState = getRuntimeState(startAt, endAt);
 
     // Get current question from orchestrator if active
     const orchestrator = ContestOrchestrator.getInstance();
     let currentQuestion = null;
     let timerRemaining = 0;
 
-    if (status === "ACTIVE" && orchestrator) {
+    if (runtimeState === "ACTIVE" && orchestrator) {
+      // Ensure orchestrator is running for this contest
+      await orchestrator.ensureContestRunning(contestId);
+      
       const questionData = orchestrator.getCurrentQuestionData(contestId);
       if (questionData) {
         currentQuestion = questionData.question;
@@ -127,10 +121,18 @@ export class MockContestService implements ContestService {
       }
     }
 
+    // For UPCOMING contests, include countdown to start
+    const countdownToStart = runtimeState === "UPCOMING" 
+      ? Math.max(0, Math.floor((startAt.getTime() - Date.now()) / 1000))
+      : 0;
+
     return {
-      status,
+      status: runtimeState,
       currentQuestion,
       timerRemaining,
+      startAt: startAt.toISOString(),
+      endAt: endAt.toISOString(),
+      countdownToStart,
     };
   }
 }
