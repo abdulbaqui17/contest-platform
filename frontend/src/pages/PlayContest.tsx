@@ -35,6 +35,12 @@ interface FinalResult {
   correctAnswers?: number;
 }
 
+interface ContestInfo {
+  title: string;
+  startTime: string;
+  totalQuestions: number;
+}
+
 const PlayContest: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -52,12 +58,19 @@ const PlayContest: React.FC = () => {
   const [currentScore, setCurrentScore] = useState<number>(0);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  // Question transition state
+  const [transitionMessage, setTransitionMessage] = useState<string>('');
+  // UPCOMING state handling
+  const [contestInfo, setContestInfo] = useState<ContestInfo | null>(null);
+  const [countdownToStart, setCountdownToStart] = useState<number>(0);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 5;
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     connectWebSocket();
+
     return () => {
       if (ws) {
         ws.close(1000);
@@ -65,8 +78,43 @@ const PlayContest: React.FC = () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+      }
     };
   }, [id]);
+
+  // Countdown timer for UPCOMING contests
+  useEffect(() => {
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+
+    if (countdownToStart > 0) {
+      countdownRef.current = setInterval(() => {
+        setCountdownToStart(prev => {
+          if (prev <= 1) {
+            if (countdownRef.current) clearInterval(countdownRef.current);
+            // Contest should be starting now - resync to get the first question
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              console.log('⏰ Countdown finished, requesting resync...');
+              ws.send(JSON.stringify({
+                event: 'resync',
+                data: { contestId: id }
+              }));
+            }
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+
+    return () => {
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, [countdownToStart, ws, id]);
 
   // Local timer countdown (backup for when server timer updates are delayed)
   useEffect(() => {
@@ -152,20 +200,48 @@ const PlayContest: React.FC = () => {
     switch (message.event) {
       case 'question_broadcast':
         console.log('📝 Received question:', message.data.questionNumber, 'of', message.data.totalQuestions);
-        setCurrentQuestion({
+        console.log('🔍 MCQ Options received:', message.data.mcqOptions);
+        
+        // CRITICAL: Validate mcqOptions exist
+        if (!message.data.mcqOptions || message.data.mcqOptions.length === 0) {
+          console.error('❌ ERROR: No MCQ options in question_broadcast!', message.data);
+          setError('Question data is incomplete. Please refresh.');
+          return;
+        }
+        
+        // CRITICAL: Clear countdown when we get a question - contest has started!
+        setCountdownToStart(0);
+        if (countdownRef.current) {
+          clearInterval(countdownRef.current);
+          countdownRef.current = null;
+        }
+        // Clear transition message - new question is here!
+        setTransitionMessage('');
+        
+        // FULL STATE REPLACEMENT - treat this as the ONLY source of truth
+        const newQuestion: Question = {
           questionId: message.data.questionId,
           title: message.data.title,
           description: message.data.description,
-          mcqOptions: message.data.mcqOptions,
+          mcqOptions: message.data.mcqOptions, // Always from server
           timeLimit: message.data.timeLimit,
           points: message.data.points,
           questionNumber: message.data.questionNumber,
           totalQuestions: message.data.totalQuestions
+        };
+        
+        console.log('✅ Setting question state:', {
+          questionId: newQuestion.questionId,
+          optionsCount: newQuestion.mcqOptions?.length
         });
+        
+        setCurrentQuestion(newQuestion);
         setTimeRemaining(message.data.timeLimit);
+        // CRITICAL: Reset UI state for new question
         setSelectedOption(null);
         setSubmissionResult(null);
         setSubmitting(false);
+        setError(''); // Clear any previous errors
         break;
 
       case 'timer_update':
@@ -192,8 +268,9 @@ const PlayContest: React.FC = () => {
         break;
 
       case 'question_change':
-        // Brief pause before next question
+        // Show transition message - next question is coming!
         console.log('⏭️ Question changing:', message.data.message);
+        setTransitionMessage(message.data.message || 'Loading next question...');
         break;
 
       case 'contest_end':
@@ -208,15 +285,38 @@ const PlayContest: React.FC = () => {
         }
         break;
 
+      case 'contest_start':
+        // Contest is UPCOMING - show countdown
+        console.log('⏰ Contest starting at:', message.data.startTime);
+        if (message.data.countdownToStart !== undefined && message.data.countdownToStart > 0) {
+          setCountdownToStart(message.data.countdownToStart);
+          setContestInfo({
+            title: message.data.contestName || message.data.title || 'Contest',
+            startTime: message.data.startTime,
+            totalQuestions: message.data.totalQuestions || 0
+          });
+        }
+        break;
+
       case 'contest_status':
         console.log('📊 Contest status:', message.data.status);
-        if (message.data.status === 'UPCOMING') {
-          setError(`Contest hasn't started yet`);
+        // Don't show error for UPCOMING - we handle it with countdown
+        if (message.data.status === 'UPCOMING' && message.data.countdownToStart) {
+          setCountdownToStart(message.data.countdownToStart);
+          setContestInfo({
+            title: message.data.contestName || message.data.title || 'Contest',
+            startTime: message.data.startAt,
+            totalQuestions: message.data.totalQuestions || 0
+          });
+        } else if (message.data.status === 'COMPLETED') {
+          setContestEnded(true);
         }
         break;
 
       case 'error':
         console.error('❌ Server error:', message.data);
+        // Don't show error for UPCOMING contests if we're showing countdown
+        if (countdownToStart > 0) return;
         setError(message.data.message);
         break;
 
@@ -316,6 +416,40 @@ const PlayContest: React.FC = () => {
     );
   }
 
+  // UPCOMING state - show countdown
+  if (countdownToStart > 0) {
+    const minutes = Math.floor(countdownToStart / 60);
+    const seconds = countdownToStart % 60;
+    return (
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
+        <Card className="max-w-md w-full">
+          <CardContent className="p-8 text-center">
+            <div className="h-16 w-16 rounded-full bg-purple-500/20 flex items-center justify-center mx-auto mb-6">
+              <Clock className="h-8 w-8 text-purple-400 animate-pulse" />
+            </div>
+            <h2 className="text-2xl font-bold text-zinc-100 mb-2">
+              {contestInfo?.title || 'Contest'} Starting Soon
+            </h2>
+            <p className="text-zinc-400 mb-6">Get ready! The contest will begin in:</p>
+            <div className="text-5xl font-mono font-bold text-purple-400 mb-6">
+              {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
+            </div>
+            {contestInfo?.startTime && (
+              <p className="text-sm text-zinc-500">
+                Start time: {new Date(contestInfo.startTime).toLocaleTimeString()}
+              </p>
+            )}
+            <div className="mt-6 p-4 bg-zinc-900/50 rounded-lg">
+              <p className="text-sm text-zinc-400">
+                💡 Tip: Stay on this page. Questions will appear automatically when the contest starts.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   // Loading state - waiting for contest data
   if (loading || !currentQuestion) {
     return (
@@ -337,20 +471,29 @@ const PlayContest: React.FC = () => {
 
   return (
     <div className="grid grid-cols-[250px_1fr] h-screen bg-zinc-950">
-      {/* Left Sidebar - Question List */}
+      {/* Left Sidebar - Question List (READ-ONLY) */}
       <div className="bg-zinc-900 border-r border-zinc-800 p-6 overflow-y-auto">
-        <h3 className="text-zinc-100 mb-6 text-lg font-semibold">Questions</h3>
-        <div className="flex flex-col gap-2">
+        <h3 className="text-zinc-100 mb-4 text-lg font-semibold">Questions</h3>
+        <p className="text-zinc-500 text-xs mb-4">Questions unlock sequentially</p>
+        <div className="flex flex-col gap-2 pointer-events-none select-none">
           {Array.from({ length: currentQuestion.totalQuestions }).map((_, idx) => (
             <div
               key={idx}
-              className={`p-3 rounded-lg text-sm font-medium transition-colors ${
+              className={`p-3 rounded-lg text-sm font-medium transition-colors cursor-default ${
                 idx + 1 === currentQuestion.questionNumber
                   ? 'bg-purple-600 text-white border-2 border-purple-400'
-                  : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                  : idx + 1 < currentQuestion.questionNumber
+                    ? 'bg-zinc-800/50 text-zinc-500 border border-zinc-700/50'
+                    : 'bg-zinc-800 text-zinc-400 border border-zinc-700 opacity-50'
               }`}
             >
               Question {idx + 1}
+              {idx + 1 < currentQuestion.questionNumber && (
+                <span className="ml-2 text-xs text-green-400">✓</span>
+              )}
+              {idx + 1 === currentQuestion.questionNumber && (
+                <span className="ml-2 text-xs">← Current</span>
+              )}
             </div>
           ))}
         </div>
@@ -422,37 +565,56 @@ const PlayContest: React.FC = () => {
                 Total score: {submissionResult.currentScore} | 
                 Rank: #{submissionResult.currentRank}
               </p>
+              {/* Transition message - shows when next question is coming */}
+              {transitionMessage && (
+                <div className="mt-3 pt-3 border-t border-zinc-700 flex items-center gap-2 text-purple-400">
+                  <div className="h-4 w-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-sm font-medium">{transitionMessage}</span>
+                </div>
+              )}
             </div>
           )}
 
           {/* MCQ Options */}
           <div className="grid gap-3 mb-8">
-            {currentQuestion.mcqOptions?.map((option, index) => {
-              const isSelected = selectedOption === option.id;
-              return (
-                <button
-                  key={option.id}
-                  onClick={() => !submitting && !submissionResult && setSelectedOption(option.id)}
-                  disabled={submitting || !!submissionResult}
-                  className={`p-4 text-left rounded-xl border-2 transition-all flex items-center gap-4 ${
-                    isSelected
-                      ? 'bg-zinc-800 border-purple-500'
-                      : 'bg-zinc-900 border-zinc-700 hover:border-zinc-600'
-                  } ${
-                    (submitting || submissionResult) ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
-                  }`}
-                >
-                  <span className={`w-8 h-8 flex items-center justify-center rounded-full font-semibold text-sm ${
-                    isSelected
-                      ? 'bg-purple-500 text-white'
-                      : 'bg-zinc-800 text-zinc-400'
-                  }`}>
-                    {String.fromCharCode(65 + index)}
-                  </span>
-                  <span className="text-zinc-100">{option.text}</span>
-                </button>
-              );
-            })}
+            {!currentQuestion.mcqOptions || currentQuestion.mcqOptions.length === 0 ? (
+              <div className="p-8 bg-red-500/10 border-2 border-red-500/50 rounded-xl text-center">
+                <X className="h-12 w-12 text-red-400 mx-auto mb-3" />
+                <h3 className="text-lg font-semibold text-red-400 mb-2">
+                  Question Data Error
+                </h3>
+                <p className="text-zinc-300 text-sm">
+                  MCQ options are missing. Please refresh the page or contact support.
+                </p>
+              </div>
+            ) : (
+              currentQuestion.mcqOptions.map((option, index) => {
+                const isSelected = selectedOption === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    onClick={() => !submitting && !submissionResult && setSelectedOption(option.id)}
+                    disabled={submitting || !!submissionResult}
+                    className={`p-4 text-left rounded-xl border-2 transition-all flex items-center gap-4 ${
+                      isSelected
+                        ? 'bg-zinc-800 border-purple-500'
+                        : 'bg-zinc-900 border-zinc-700 hover:border-zinc-600'
+                    } ${
+                      (submitting || submissionResult) ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                    }`}
+                  >
+                    <span className={`w-8 h-8 flex items-center justify-center rounded-full font-semibold text-sm ${
+                      isSelected
+                        ? 'bg-purple-500 text-white'
+                        : 'bg-zinc-800 text-zinc-400'
+                    }`}>
+                      {String.fromCharCode(65 + index)}
+                    </span>
+                    <span className="text-zinc-100">{option.text}</span>
+                  </button>
+                );
+              })
+            )}
           </div>
 
           {/* Submit Button */}
