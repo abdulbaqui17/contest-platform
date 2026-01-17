@@ -101,6 +101,30 @@ export class ContestOrchestrator {
   }
 
   /**
+   * Update participant count when a user joins.
+   * Called by WebSocket handler when user successfully joins contest.
+   * This ensures early advancement logic works correctly for late joiners.
+   */
+  updateParticipantCount(contestId: string): void {
+    const state = this.activeContests.get(contestId);
+    if (!state) {
+      return;
+    }
+
+    // Recount participants from database
+    prisma.contestParticipant.count({
+      where: { contestId }
+    }).then(count => {
+      if (state.totalParticipants !== count) {
+        console.log(`👥 Updated participant count for contest ${contestId}: ${state.totalParticipants} → ${count}`);
+        state.totalParticipants = count;
+      }
+    }).catch(err => {
+      console.error(`Failed to update participant count for contest ${contestId}:`, err);
+    });
+  }
+
+  /**
    * CRITICAL: Record a user's submission for the current question.
    * Called by WebSocket handler after successful submission.
    * 
@@ -253,7 +277,7 @@ export class ContestOrchestrator {
     this.emitContestStart(contest);
     
     // CRITICAL: Immediately start first question - ACTIVE contest MUST have a current question
-    this.startNextQuestion(state);
+    await this.startNextQuestion(state);
   }
 
   stopContest(contestId: string): void {
@@ -348,22 +372,50 @@ export class ContestOrchestrator {
     });
   }
 
-  private startNextQuestion(state: ContestState): void {
+  private async startNextQuestion(state: ContestState): Promise<void> {
     state.currentQuestionIndex++;
     const question = state.questions[state.currentQuestionIndex];
 
     if (!question) {
-      this.endContest(state);
+      await this.endContest(state);
       return;
     }
 
-    // CRITICAL: Reset submission tracking for new question
+    // CRITICAL: Reset submission tracking for new question AND check database for existing submissions
     state.submittedUsers.clear();
+    
+    // CRITICAL FIX: Check database for users who have already submitted this question
+    // This handles cases where orchestrator was restarted mid-contest
+    try {
+      const existingSubmissions = await prisma.submission.findMany({
+        where: {
+          contestId: state.contestId,
+          questionId: question.id,
+        },
+        select: { userId: true },
+      });
+      
+      existingSubmissions.forEach(s => state.submittedUsers.add(s.userId));
+      
+      if (existingSubmissions.length > 0) {
+        console.log(`📝 Restored ${existingSubmissions.length} existing submissions for question ${state.currentQuestionIndex + 1}`);
+        
+        // CRITICAL: Check if all participants have already submitted - if so, skip to next question
+        if (state.submittedUsers.size >= state.totalParticipants && state.totalParticipants > 0) {
+          console.log(`⚡ All participants already submitted question ${state.currentQuestionIndex + 1}. Skipping to next question.`);
+          // Recursively advance to next question
+          await this.startNextQuestion(state);
+          return;
+        }
+      }
+    } catch (error) {
+      console.error('Failed to check existing submissions:', error);
+    }
     
     state.currentQuestionStartTime = Date.now(); // Track when question started
     console.log(`📢 Broadcasting question ${state.currentQuestionIndex + 1}/${state.questions.length} for contest ${state.contestId}`);
     // CRITICAL: Await question broadcast to ensure mcqOptions are loaded
-    this.emitQuestionBroadcast(state.contestId, question, state.currentQuestionIndex + 1);
+    await this.emitQuestionBroadcast(state.contestId, question, state.currentQuestionIndex + 1);
     this.startQuestionTimer(state, question);
   }
 
@@ -458,9 +510,9 @@ export class ContestOrchestrator {
 
     if (nextQuestion) {
       // Reduced delay from 5 seconds to 2 seconds for snappier progression
-      setTimeout(() => this.startNextQuestion(state), 2000);
+      setTimeout(async () => await this.startNextQuestion(state), 2000);
     } else {
-      setTimeout(() => this.endContest(state), 2000);
+      setTimeout(async () => await this.endContest(state), 2000);
     }
   }
 
