@@ -68,7 +68,17 @@ const PlayContest: React.FC = () => {
   const maxReconnectAttempts = 5;
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // FIX #1: Only connect WebSocket after auth token is available
   useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.log('⚠️ No auth token found, cannot connect WebSocket');
+      setError('No authentication token found. Please sign in.');
+      setLoading(false);
+      return;
+    }
+
+    console.log('✅ Auth token found, connecting WebSocket...');
     connectWebSocket();
 
     return () => {
@@ -258,6 +268,27 @@ const PlayContest: React.FC = () => {
         setCurrentScore(message.data.currentScore);
         setCurrentRank(message.data.currentRank);
         setSubmitting(false);
+        
+        // CRITICAL FIX: After submission, request next question via resync
+        // This ensures each user progresses at their own pace
+        if (message.data.nextQuestionIndex !== undefined) {
+          console.log('✅ Submission complete, next question index:', message.data.nextQuestionIndex);
+          if (message.data.completed) {
+            console.log('🏁 All questions completed!');
+            // Don't resync - wait for contest_end or show completion
+          } else {
+            // Request next question after a brief delay to show result feedback
+            console.log('📤 Requesting next question after submission...');
+            setTimeout(() => {
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                  event: 'resync',
+                  data: { contestId: id }
+                }));
+              }
+            }, 1500); // 1.5 second delay to show result before moving to next question
+          }
+        }
         break;
 
       case 'leaderboard_update':
