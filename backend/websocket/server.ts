@@ -250,6 +250,11 @@ export class ContestWebSocketServer {
       ws.client.contestId = contestId;
       this.addToRoom(contestId, ws);
 
+      // CRITICAL: Update orchestrator participant count for early advance logic
+      if (orchestrator && !isMonitoringAdmin) {
+        orchestrator.updateParticipantCount(contestId);
+      }
+
       console.log(`✅ ${isMonitoringAdmin ? 'Admin monitor' : 'User'} ${ws.client.userId} successfully joined ACTIVE contest ${contestId}`);
 
       await this.sendCurrentStateToUser(ws, contestId);
@@ -445,6 +450,34 @@ export class ContestWebSocketServer {
         submittedAt: data.submittedAt,
       });
 
+      // CRITICAL FIX: Calculate nextQuestionIndex for frontend to advance
+      const { prisma } = await import("../../db/prismaClient");
+      
+      // Get current question's order
+      const currentContestQuestion = await prisma.contestQuestion.findFirst({
+        where: {
+          contestId: ws.client.contestId,
+          questionId: data.questionId,
+        },
+        select: { orderIndex: true },
+      });
+
+      // Count total questions in contest
+      const totalQuestions = await prisma.contestQuestion.count({
+        where: { contestId: ws.client.contestId },
+      });
+
+      const currentQuestionIndex = currentContestQuestion?.orderIndex ?? 0;
+      const nextQuestionIndex = currentQuestionIndex + 1;
+      const isCompleted = nextQuestionIndex >= totalQuestions;
+
+      console.log('📊 Question Progress:', {
+        currentIndex: currentQuestionIndex,
+        nextIndex: nextQuestionIndex,
+        total: totalQuestions,
+        completed: isCompleted,
+      });
+
       this.sendToClient(ws, {
         event: "submission_result",
         data: {
@@ -456,6 +489,11 @@ export class ContestWebSocketServer {
           submittedAt: data.submittedAt,
           currentScore: result.currentScore,
           currentRank: result.currentRank,
+          // FIX: Add nextQuestionIndex for frontend to advance
+          nextQuestionIndex: isCompleted ? currentQuestionIndex : nextQuestionIndex,
+          currentQuestionIndex,
+          totalQuestions,
+          completed: isCompleted,
         },
         timestamp: new Date().toISOString(),
       });
@@ -464,7 +502,10 @@ export class ContestWebSocketServer {
       // If all participants have submitted, this will trigger immediate advancement to next question
       const orchestrator = ContestOrchestrator.getInstance();
       if (orchestrator) {
+        console.log(`📝 Recording submission for orchestrator: contestId=${ws.client.contestId}, userId=${ws.client.userId}, questionId=${data.questionId}`);
         orchestrator.recordSubmission(ws.client.contestId, ws.client.userId, data.questionId);
+      } else {
+        console.warn(`⚠️ No orchestrator instance found when recording submission`);
       }
 
       setTimeout(() => this.broadcastLeaderboardUpdate(ws.client!.contestId!), 100);
