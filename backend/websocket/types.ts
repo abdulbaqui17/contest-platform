@@ -68,6 +68,10 @@ export interface SubmissionResultEvent {
     submittedAt: string;
     currentScore: number;
     currentRank: number;
+    nextQuestionIndex: number;
+    currentQuestionIndex: number;
+    totalQuestions: number;
+    completed: boolean;
   };
   timestamp: string;
 }
