@@ -50,20 +50,40 @@ export class MockContestService implements ContestService {
   }
 
   async getCurrentQuestion(contestId: string, userId: string) {
-    // Get current question from ContestOrchestrator
-    const orchestrator = ContestOrchestrator.getInstance();
-    if (!orchestrator) {
-      console.log(' ContestOrchestrator not initialized');
+    // CRITICAL FIX: Get the user's next unanswered question, NOT the orchestrator's current question
+    // This allows users to progress at their own pace through sequential questions
+    
+    // Get all contest questions ordered by orderIndex
+    const contestQuestions = await prisma.contestQuestion.findMany({
+      where: { contestId },
+      include: { question: true },
+      orderBy: { orderIndex: 'asc' }
+    });
+
+    if (contestQuestions.length === 0) {
+      console.log(`📭 No questions found for contest ${contestId}`);
       return null;
     }
 
-    const questionData = orchestrator.getCurrentQuestionData(contestId);
-    if (!questionData) {
-      console.log(` No current question for contest ${contestId}`);
+    // Get all submissions by this user for this contest
+    const userSubmissions = await prisma.submission.findMany({
+      where: { contestId, userId },
+      select: { questionId: true }
+    });
+    const submittedQuestionIds = new Set(userSubmissions.map(s => s.questionId));
+
+    // Find the first unanswered question
+    const nextQuestion = contestQuestions.find(cq => !submittedQuestionIds.has(cq.questionId));
+    
+    if (!nextQuestion) {
+      // User has answered all questions
+      console.log(`✅ User ${userId} has answered all questions in contest ${contestId}`);
       return null;
     }
 
-    const { question, questionNumber, totalQuestions, remainingTime } = questionData;
+    const question = nextQuestion.question;
+    const questionNumber = nextQuestion.orderIndex + 1;
+    const totalQuestions = contestQuestions.length;
 
     // Get MCQ options if it's an MCQ question
     let mcqOptions: Array<{ id: string; text: string }> = [];
@@ -75,18 +95,30 @@ export class MockContestService implements ContestService {
       mcqOptions = options;
     }
 
+    // Get timer info from orchestrator if available (for synchronized time remaining)
+    const orchestrator = ContestOrchestrator.getInstance();
+    let remainingTime = nextQuestion.timeLimit;
+    
+    if (orchestrator) {
+      const orchestratorData = orchestrator.getCurrentQuestionData(contestId);
+      // If the orchestrator is on the same question, use its timer
+      if (orchestratorData && orchestratorData.question.id === question.id) {
+        remainingTime = orchestratorData.remainingTime;
+      }
+    }
+
     return {
       questionId: question.id,
-      contestQuestionId: question.id,
+      contestQuestionId: nextQuestion.id,
       type: question.type as "MCQ" | "DSA" | "SANDBOX",
       title: question.title,
       description: question.description,
       mcqOptions,
-      timeLimit: question.timeLimit,
-      points: question.points,
+      timeLimit: nextQuestion.timeLimit,
+      points: nextQuestion.points,
       questionNumber,
       totalQuestions,
-      startedAt: new Date(Date.now() - (question.timeLimit - remainingTime) * 1000).toISOString(),
+      startedAt: new Date().toISOString(),
     };
   }
 
