@@ -5,7 +5,8 @@ import { ContestSummary } from '../types';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { LogOut, Trophy, Play } from 'lucide-react';
+import { Trophy, Play } from 'lucide-react';
+import UserProfileDropdown from '../components/UserProfileDropdown';
 
 const UserContests: React.FC = () => {
   const [contests, setContests] = useState<ContestSummary[]>([]);
@@ -45,11 +46,6 @@ const UserContests: React.FC = () => {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    navigate('/');
-  };
-
   const now = new Date();
   const activeContests = contests
     .filter(c => {
@@ -87,10 +83,7 @@ const UserContests: React.FC = () => {
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-3xl font-bold text-zinc-100">Contests</h1>
-          <Button variant="secondary" onClick={handleLogout}>
-            <LogOut className="h-4 w-4 mr-2" />
-            Logout
-          </Button>
+          <UserProfileDropdown />
         </div>
 
         {error && (
