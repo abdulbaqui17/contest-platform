@@ -23,7 +23,12 @@ const Signup: React.FC = () => {
 
     try {
       const response = await authAPI.signup(formData);
+      // Clear any existing tokens to prevent conflicts when switching accounts
+      localStorage.removeItem('token');
+      localStorage.removeItem('admin_token');
+      localStorage.removeItem('userId');
       localStorage.setItem('token', response.token);
+      localStorage.setItem('userId', response.user.id);
       navigate('/contests');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Signup failed');

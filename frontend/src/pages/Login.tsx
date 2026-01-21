@@ -23,6 +23,9 @@ const Login: React.FC = () => {
 
     try {
       const response = await authAPI.signin(formData);
+      // Clear any existing tokens to prevent conflicts when switching accounts
+      localStorage.removeItem('token');
+      localStorage.removeItem('admin_token');
       localStorage.setItem('admin_token', response.token);
       navigate('/admin/contests');
     } catch (err: any) {
