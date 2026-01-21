@@ -4,6 +4,7 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Trophy, Clock, Check, X } from 'lucide-react';
+import UserProfileDropdown from '../components/UserProfileDropdown';
 
 interface MCQOption {
   id: string;
@@ -41,6 +42,14 @@ interface ContestInfo {
   totalQuestions: number;
 }
 
+interface LeaderboardEntry {
+  rank: number;
+  userId: string;
+  userName: string;
+  score: number;
+  questionsAnswered: number;
+}
+
 const PlayContest: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -56,6 +65,7 @@ const PlayContest: React.FC = () => {
   const [finalResult, setFinalResult] = useState<FinalResult | null>(null);
   const [currentRank, setCurrentRank] = useState<number>(0);
   const [currentScore, setCurrentScore] = useState<number>(0);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   // Question transition state
@@ -292,9 +302,13 @@ const PlayContest: React.FC = () => {
         break;
 
       case 'leaderboard_update':
+        console.log('📊 Leaderboard update received:', message.data);
         if (message.data.userEntry) {
           setCurrentRank(message.data.userEntry.rank);
           setCurrentScore(message.data.userEntry.score);
+        }
+        if (message.data.topN) {
+          setLeaderboard(message.data.topN);
         }
         break;
 
@@ -502,8 +516,9 @@ const PlayContest: React.FC = () => {
 
   return (
     <div className="grid grid-cols-[250px_1fr] h-screen bg-zinc-950">
-      {/* Left Sidebar - Question List (READ-ONLY) */}
+      {/* Left Sidebar - Question List & Leaderboard */}
       <div className="bg-zinc-900 border-r border-zinc-800 p-6 overflow-y-auto">
+        {/* Questions Section */}
         <h3 className="text-zinc-100 mb-4 text-lg font-semibold">Questions</h3>
         <p className="text-zinc-500 text-xs mb-4">Questions unlock sequentially</p>
         <div className="flex flex-col gap-2 pointer-events-none select-none">
@@ -528,6 +543,58 @@ const PlayContest: React.FC = () => {
             </div>
           ))}
         </div>
+
+        {/* Live Leaderboard Section */}
+        <div className="mt-8 pt-6 border-t border-zinc-700">
+          <h3 className="text-zinc-100 mb-4 text-lg font-semibold flex items-center gap-2">
+            🏆 Live Leaderboard
+            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+          </h3>
+          {leaderboard.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              {leaderboard.slice(0, 10).map((entry, idx) => (
+                <div
+                  key={entry.userId}
+                  className={`p-3 rounded-lg text-sm transition-all ${
+                    entry.userId === localStorage.getItem('userId')
+                      ? 'bg-purple-600/30 border border-purple-500'
+                      : idx === 0
+                        ? 'bg-yellow-500/20 border border-yellow-500/50'
+                        : idx === 1
+                          ? 'bg-zinc-400/20 border border-zinc-400/50'
+                          : idx === 2
+                            ? 'bg-amber-600/20 border border-amber-600/50'
+                            : 'bg-zinc-800 border border-zinc-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className={`font-bold ${
+                        idx === 0 ? 'text-yellow-400' :
+                        idx === 1 ? 'text-zinc-300' :
+                        idx === 2 ? 'text-amber-500' :
+                        'text-zinc-400'
+                      }`}>
+                        #{entry.rank}
+                      </span>
+                      <span className={`truncate max-w-[100px] ${
+                        entry.userId === localStorage.getItem('userId')
+                          ? 'text-purple-300 font-semibold'
+                          : 'text-zinc-300'
+                      }`}>
+                        {entry.userName}
+                        {entry.userId === localStorage.getItem('userId') && ' (You)'}
+                      </span>
+                    </div>
+                    <span className="text-purple-400 font-bold">{entry.score}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-zinc-500 text-sm">Waiting for participants...</p>
+          )}
+        </div>
       </div>
 
       {/* Main Content */}
@@ -544,17 +611,20 @@ const PlayContest: React.FC = () => {
               <div className="text-2xl font-bold text-zinc-100">#{currentRank || '-'}</div>
             </div>
           </div>
-          <div className={`flex items-center gap-3 px-4 py-2 rounded-lg border-2 ${
-            timeRemaining < 10
-              ? 'bg-red-500/10 border-red-500/50'
-              : 'bg-zinc-800 border-zinc-700'
-          }`}>
-            <Clock className={`h-5 w-5 ${timeRemaining < 10 ? 'text-red-400' : 'text-zinc-400'}`} />
-            <span className={`text-3xl font-bold min-w-[60px] text-center ${
-              timeRemaining < 10 ? 'text-red-400' : 'text-purple-400'
+          <div className="flex items-center gap-4">
+            <div className={`flex items-center gap-3 px-4 py-2 rounded-lg border-2 ${
+              timeRemaining < 10
+                ? 'bg-red-500/10 border-red-500/50'
+                : 'bg-zinc-800 border-zinc-700'
             }`}>
-              {Math.ceil(timeRemaining)}s
-            </span>
+              <Clock className={`h-5 w-5 ${timeRemaining < 10 ? 'text-red-400' : 'text-zinc-400'}`} />
+              <span className={`text-3xl font-bold min-w-[60px] text-center ${
+                timeRemaining < 10 ? 'text-red-400' : 'text-purple-400'
+              }`}>
+                {Math.ceil(timeRemaining)}s
+              </span>
+            </div>
+            <UserProfileDropdown />
           </div>
         </div>
 
