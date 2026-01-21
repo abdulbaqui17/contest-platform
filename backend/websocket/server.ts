@@ -253,6 +253,13 @@ export class ContestWebSocketServer {
       // CRITICAL: Update orchestrator participant count for early advance logic
       if (orchestrator && !isMonitoringAdmin) {
         orchestrator.updateParticipantCount(contestId);
+        
+        // Initialize user in leaderboard with score 0 if not already present
+        const existingEntry = await this.leaderboardService.getUserRank(contestId, ws.client.userId);
+        if (!existingEntry) {
+          await this.leaderboardService.updateScore(contestId, ws.client.userId, 0);
+          console.log(`📊 Initialized leaderboard entry for user ${ws.client.userId} in contest ${contestId}`);
+        }
       }
 
       console.log(`✅ ${isMonitoringAdmin ? 'Admin monitor' : 'User'} ${ws.client.userId} successfully joined ACTIVE contest ${contestId}`);
@@ -614,14 +621,25 @@ export class ContestWebSocketServer {
 
   broadcastToContest(contestId: string, event: ServerEvent) {
     const room = this.contestRooms.get(contestId);
-    if (!room) return;
+    if (!room) {
+      console.warn(`⚠️ No room found for contest ${contestId} - no clients to broadcast to`);
+      return;
+    }
 
     const message = JSON.stringify(event);
+    let sentCount = 0;
+    let skippedCount = 0;
+    
     room.forEach((client) => {
       if (client.readyState === WebSocket.OPEN) {
         client.send(message);
+        sentCount++;
+      } else {
+        skippedCount++;
       }
     });
+    
+    console.log(`📡 Broadcast ${event.event} to contest ${contestId}: ${sentCount} sent, ${skippedCount} skipped (not open)`);
   }
 
   private async broadcastLeaderboardUpdate(contestId: string) {
@@ -712,8 +730,11 @@ export class ContestWebSocketServer {
   private addToRoom(contestId: string, ws: ExtendedWebSocket) {
     if (!this.contestRooms.has(contestId)) {
       this.contestRooms.set(contestId, new Set());
+      console.log(`🏠 Created new room for contest ${contestId}`);
     }
     this.contestRooms.get(contestId)!.add(ws);
+    const roomSize = this.contestRooms.get(contestId)!.size;
+    console.log(`👥 User ${ws.client?.userId} added to room ${contestId} (${roomSize} total clients)`);
   }
 
   private removeFromRoom(contestId: string, ws: ExtendedWebSocket) {
