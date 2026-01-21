@@ -4,6 +4,7 @@ import { SignupRequestSchema, SigninRequestSchema } from "../schemas";
 import { prisma } from "../../db/prismaClient";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { authenticateToken, AuthRequest } from "../middleware/auth";
 
 const router = Router();
 
@@ -110,6 +111,44 @@ router.post("/signin", async (req, res) => {
       return res.status(400).json({ error: error.issues[0].message });
     }
     console.error("Signin error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Get current user profile
+router.get("/me", authenticateToken, async (req, res) => {
+  try {
+    const authReq = req as AuthRequest;
+    const userId = authReq.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      createdAt: user.createdAt.toISOString(),
+    });
+  } catch (error) {
+    console.error("Get profile error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
