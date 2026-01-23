@@ -5,6 +5,9 @@ import cors from "cors";
 import authRoutes from "./auth";
 import contestRoutes from "./contests";
 import questionRoutes from "./questions";
+import submissionRoutes from "./submissions";
+import userStatsRoutes from "./users";
+import editorialRoutes from "./editorials";
 import { ContestWebSocketServer } from "./websocket/server";
 import {
   MockContestService,
@@ -32,6 +35,9 @@ app.use("/contests", contestRoutes);
 app.use("/contest", contestRoutes);
 app.use("/leaderboard", contestRoutes);
 app.use("/questions", questionRoutes);
+app.use("/submissions", submissionRoutes);
+app.use("/users", userStatsRoutes);
+app.use("/editorials", editorialRoutes);
 
 // Health check endpoint for Docker
 app.get("/health", (req, res) => {

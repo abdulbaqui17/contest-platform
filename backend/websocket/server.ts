@@ -23,6 +23,17 @@ const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
 interface ExtendedWebSocket extends WebSocket {
   client?: AuthenticatedClient;
   isAlive?: boolean;
+  userId?: string;
+}
+
+// Global instance for access from other modules
+let globalWssInstance: WebSocketServer | null = null;
+
+/**
+ * Get the WebSocket server instance for sending updates from other modules
+ */
+export function getWss(): WebSocketServer | null {
+  return globalWssInstance;
 }
 
 export class ContestWebSocketServer {
@@ -37,6 +48,7 @@ export class ContestWebSocketServer {
     private timerService: TimerService
   ) {
     this.wss = new WebSocketServer({ noServer: true });
+    globalWssInstance = this.wss; // Set global instance for access from other modules
     this.setupHeartbeat();
   }
 

@@ -34,6 +34,35 @@ export const authenticateToken = (
   }
 };
 
+/**
+ * Optional authentication - continues even without token
+ * Sets user if valid token provided, otherwise continues without user
+ */
+export const optionalAuth = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+
+  if (!token) {
+    return next(); // Continue without user
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as {
+      userId: string;
+      role: string;
+    };
+    (req as AuthRequest).user = decoded;
+  } catch {
+    // Invalid token, continue without user
+  }
+
+  next();
+};
+
 export const requireAdmin = (
   req: Request,
   res: Response,
