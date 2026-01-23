@@ -1,9 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider      = "prisma-client-js"
   output        = "../generated/prisma"
@@ -21,8 +18,15 @@ enum Role {
 
 enum QuestionType {
   MCQ
+  CODING
   DSA
   SANDBOX
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
 }
 
 enum ContestStatus {
@@ -30,6 +34,17 @@ enum ContestStatus {
   UPCOMING
   ACTIVE
   COMPLETED
+}
+
+enum SubmissionStatus {
+  PENDING
+  RUNNING
+  ACCEPTED
+  WRONG_ANSWER
+  TIME_LIMIT_EXCEEDED
+  MEMORY_LIMIT_EXCEEDED
+  RUNTIME_ERROR
+  COMPILATION_ERROR
 }
 
 model User {
@@ -40,29 +55,152 @@ model User {
   role      Role     @default(USER)
   createdAt DateTime @default(now())
 
-  submissions Submission[]
-  contests    ContestParticipant[]
+  submissions          Submission[]
+  contests             ContestParticipant[]
   leaderboardSnapshots LeaderboardSnapshot[]
+  stats                UserStats?
+  practiceSubmissions  PracticeSubmission[]
+
+  @@index([email])
 }
 
+// ============================================================================
+// USER STATISTICS - Tracks overall coding progress
+// ============================================================================
+model UserStats {
+  id     String @id @default(uuid())
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @unique
+
+  // Problem solving stats
+  totalSolved    Int @default(0)
+  easySolved     Int @default(0)
+  mediumSolved   Int @default(0)
+  hardSolved     Int @default(0)
+  totalAttempted Int @default(0)
+
+  // Submission stats
+  totalSubmissions Int   @default(0)
+  acceptedCount    Int   @default(0)
+  acceptanceRate   Float @default(0)
+
+  // Contest stats
+  contestsParticipated Int @default(0)
+  bestContestRank      Int?
+  totalContestScore    Int @default(0)
+
+  // Streak tracking
+  currentStreak Int      @default(0)
+  maxStreak     Int      @default(0)
+  lastActiveAt  DateTime @default(now())
+
+  updatedAt DateTime @updatedAt
+
+  @@index([totalSolved])
+  @@index([currentStreak])
+}
+
+// ============================================================================
+// QUESTIONS - Enhanced with difficulty and editorial support
+// ============================================================================
 model Question {
-  id          String        @id @default(uuid())
+  id          String       @id @default(uuid())
   type        QuestionType
   title       String
   description String
-  createdAt   DateTime      @default(now())
+  difficulty  Difficulty   @default(MEDIUM)
+  
+  // Code execution limits
+  memoryLimit Int? // For CODING: memory limit in MB (default 256)
+  timeLimit   Int? // For CODING: time limit in ms (default 2000)
 
-  mcqOptions  McqOption[]
-  contests    ContestQuestion[]
-  submissions Submission[]
+  // Starter code templates
+  starterCode Json? // { "javascript": "function solve()", "python": "def solve():" }
+  
+  // Function signature for execution
+  functionName String? // e.g., "twoSum"
+
+  // Metadata
+  tags      String[] @default([])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  mcqOptions          McqOption[]
+  testCases           TestCase[]
+  contests            ContestQuestion[]
+  submissions         Submission[]
+  editorial           Editorial?
+  practiceSubmissions PracticeSubmission[]
+  solvedBy            SolvedQuestion[]
 
   @@index([type])
+  @@index([difficulty])
+}
+
+// ============================================================================
+// EDITORIAL - Problem solutions and explanations
+// ============================================================================
+model Editorial {
+  id         String   @id @default(uuid())
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  questionId String   @unique
+
+  // Content (Markdown)
+  approach        String // Main explanation
+  timeComplexity  String // e.g., "O(n)"
+  spaceComplexity String // e.g., "O(1)"
+
+  // Solution code in multiple languages
+  solutionCode Json // { "javascript": "...", "python": "...", "cpp": "..." }
+
+  // Progressive hints
+  hints String[] @default([])
+
+  // Video explanation (optional)
+  videoUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+// ============================================================================
+// SOLVED QUESTIONS - Track which users solved which problems
+// ============================================================================
+model SolvedQuestion {
+  id         String   @id @default(uuid())
+  userId     String
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  solvedAt   DateTime @default(now())
+  
+  // Best submission stats for this problem
+  bestRuntime Int?
+  bestMemory  Int?
+  language    String?
+
+  @@unique([userId, questionId])
+  @@index([userId])
+  @@index([questionId])
+}
+
+model TestCase {
+  id             String   @id @default(uuid())
+  question       Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  questionId     String
+  input          String // Function arguments as JSON string
+  expectedOutput String // Expected output as JSON string
+  isHidden       Boolean  @default(true) // Hidden cases for grading, visible for examples
+  order          Int      @default(0) // Order of test case display
+  explanation    String?  // Optional explanation for sample cases
+
+  @@index([questionId])
+  @@index([questionId, isHidden])
 }
 
 model McqOption {
-  id         String   @id @default(uuid())
-  text       String
-  isCorrect  Boolean  @default(false)
+  id        String  @id @default(uuid())
+  text      String
+  isCorrect Boolean @default(false)
 
   question   Question @relation(fields: [questionId], references: [id])
   questionId String
@@ -77,70 +215,132 @@ model Contest {
   status      ContestStatus
   createdAt   DateTime      @default(now())
 
-  questions   ContestQuestion[]
-  participants ContestParticipant[]
-  submissions Submission[]
+  questions            ContestQuestion[]
+  participants         ContestParticipant[]
+  submissions          Submission[]
   leaderboardSnapshots LeaderboardSnapshot[]
 }
 
 model ContestQuestion {
-  id          String   @id @default(uuid())
-  contest     Contest  @relation(fields: [contestId], references: [id])
-  contestId   String
+  id        String  @id @default(uuid())
+  contest   Contest @relation(fields: [contestId], references: [id])
+  contestId String
 
-  question    Question @relation(fields: [questionId], references: [id])
-  questionId  String
+  question   Question @relation(fields: [questionId], references: [id])
+  questionId String
 
-  orderIndex  Int
-  points      Int
-  timeLimit   Int
+  orderIndex Int
+  points     Int
+  timeLimit  Int
 
   @@unique([contestId, questionId])
   @@index([contestId])
 }
 
 model ContestParticipant {
-  id        String   @id @default(uuid())
-  contest   Contest  @relation(fields: [contestId], references: [id])
+  id        String  @id @default(uuid())
+  contest   Contest @relation(fields: [contestId], references: [id])
   contestId String
 
-  user      User     @relation(fields: [userId], references: [id])
-  userId    String
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
 
-  joinedAt  DateTime @default(now())
+  joinedAt DateTime @default(now())
 
   @@unique([contestId, userId])
 }
 
+// ============================================================================
+// CONTEST SUBMISSION - Submissions within a contest
+// ============================================================================
 model Submission {
-  id          String   @id @default(uuid())
-  user        User     @relation(fields: [userId], references: [id])
-  userId      String
+  id        String  @id @default(uuid())
+  user      User    @relation(fields: [userId], references: [id])
+  userId    String
+  contest   Contest @relation(fields: [contestId], references: [id])
+  contestId String
+  question  Question @relation(fields: [questionId], references: [id])
+  questionId String
 
-  contest     Contest  @relation(fields: [contestId], references: [id])
-  contestId   String
-
-  question    Question @relation(fields: [questionId], references: [id])
-  questionId  String
-
+  // For MCQ submissions
   selectedOptionId String?
   isCorrect        Boolean
-  submittedAt      DateTime @default(now())
+
+  // For CODING submissions
+  code     String? // User's submitted source code
+  language String? // Programming language
+
+  // Execution results
+  status          SubmissionStatus @default(PENDING)
+  executionTime   Int? // Execution time in milliseconds
+  memoryUsed      Int? // Memory used in MB
+  testCasesPassed Int? // Number of test cases passed
+  totalTestCases  Int? // Total number of test cases
+
+  // Judge0 tracking
+  judge0Token String? // Token for async result retrieval
+  
+  // Error details
+  compileOutput String? // Compilation error message
+  stderr        String? // Runtime error output
+
+  submittedAt DateTime @default(now())
 
   @@unique([userId, contestId, questionId])
   @@index([contestId])
+  @@index([userId])
+  @@index([status])
+}
+
+// ============================================================================
+// PRACTICE SUBMISSION - Non-contest submissions (LeetCode-style practice)
+// ============================================================================
+model PracticeSubmission {
+  id         String   @id @default(uuid())
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+  question   Question @relation(fields: [questionId], references: [id])
+  questionId String
+
+  // Code details
+  code     String
+  language String
+
+  // Execution results
+  status          SubmissionStatus @default(PENDING)
+  executionTime   Int? // ms
+  memoryUsed      Int? // MB
+  testCasesPassed Int?
+  totalTestCases  Int?
+
+  // Judge0 tracking
+  judge0Token String?
+
+  // Error details
+  compileOutput String?
+  stderr        String?
+
+  // Detailed test results (for visible tests only)
+  testResults Json? // Array of { input, expected, actual, passed, time, memory }
+
+  submittedAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([questionId])
+  @@index([userId, questionId])
+  @@index([status])
 }
 
 model LeaderboardSnapshot {
-  id        String   @id @default(uuid())
-  contest   Contest  @relation(fields: [contestId], references: [id])
+  id        String  @id @default(uuid())
+  contest   Contest @relation(fields: [contestId], references: [id])
   contestId String
 
-  user      User     @relation(fields: [userId], references: [id])
-  userId    String
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
 
-  score     Int
-  rank      Int
+  score Int
+  rank  Int
 
   @@index([contestId, rank])
 }

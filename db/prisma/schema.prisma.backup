@@ -1,0 +1,173 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../generated/prisma"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x", "linux-arm64-openssl-1.1.x", "linux-arm64-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum QuestionType {
+  MCQ
+  CODING
+  DSA
+  SANDBOX
+}
+
+enum ContestStatus {
+  DRAFT
+  UPCOMING
+  ACTIVE
+  COMPLETED
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(USER)
+  createdAt DateTime @default(now())
+
+  submissions Submission[]
+  contests    ContestParticipant[]
+  leaderboardSnapshots LeaderboardSnapshot[]
+}
+
+model Question {
+  id          String        @id @default(uuid())
+  type        QuestionType
+  title       String
+  description String
+  memoryLimit Int?          // For CODING: memory limit in KB
+  timeLimit   Int?          // For CODING: time limit in milliseconds
+  createdAt   DateTime      @default(now())
+
+  mcqOptions  McqOption[]
+  testCases   TestCase[]
+  contests    ContestQuestion[]
+  submissions Submission[]
+
+  @@index([type])
+}
+
+model TestCase {
+  id             String   @id @default(uuid())
+  question       Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  questionId     String
+  input          String   // Function arguments as JSON string
+  expectedOutput String   // Expected output as JSON string
+  isHidden       Boolean  @default(true) // Hidden cases for grading, visible for examples
+  order          Int      @default(0)    // Order of test case display
+
+  @@index([questionId])
+}
+
+model McqOption {
+  id         String   @id @default(uuid())
+  text       String
+  isCorrect  Boolean  @default(false)
+
+  question   Question @relation(fields: [questionId], references: [id])
+  questionId String
+}
+
+model Contest {
+  id          String        @id @default(uuid())
+  title       String
+  description String
+  startAt     DateTime
+  endAt       DateTime
+  status      ContestStatus
+  createdAt   DateTime      @default(now())
+
+  questions   ContestQuestion[]
+  participants ContestParticipant[]
+  submissions Submission[]
+  leaderboardSnapshots LeaderboardSnapshot[]
+}
+
+model ContestQuestion {
+  id          String   @id @default(uuid())
+  contest     Contest  @relation(fields: [contestId], references: [id])
+  contestId   String
+
+  question    Question @relation(fields: [questionId], references: [id])
+  questionId  String
+
+  orderIndex  Int
+  points      Int
+  timeLimit   Int
+
+  @@unique([contestId, questionId])
+  @@index([contestId])
+}
+
+model ContestParticipant {
+  id        String   @id @default(uuid())
+  contest   Contest  @relation(fields: [contestId], references: [id])
+  contestId String
+
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+
+  joinedAt  DateTime @default(now())
+
+  @@unique([contestId, userId])
+}
+
+model Submission {
+  id          String   @id @default(uuid())
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+
+  contest     Contest  @relation(fields: [contestId], references: [id])
+  contestId   String
+
+  question    Question @relation(fields: [questionId], references: [id])
+  questionId  String
+
+  // For MCQ submissions
+  selectedOptionId String?
+  isCorrect        Boolean
+  
+  // For CODING submissions
+  code          String?  // User's submitted source code
+  language      String?  // Programming language (e.g., "javascript", "python")
+  executionTime Int?     // Execution time in milliseconds
+  memoryUsed    Int?     // Memory used in KB
+  status        String   @default("pending") // pending, accepted, wrong_answer, time_limit_exceeded, memory_limit_exceeded, runtime_error
+  testCasesPassed Int?   // Number of test cases passed
+  totalTestCases  Int?   // Total number of test cases
+  
+  submittedAt      DateTime @default(now())
+
+  @@unique([userId, contestId, questionId])
+  @@index([contestId])
+}
+
+model LeaderboardSnapshot {
+  id        String   @id @default(uuid())
+  contest   Contest  @relation(fields: [contestId], references: [id])
+  contestId String
+
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+
+  score     Int
+  rank      Int
+
+  @@index([contestId, rank])
+}
