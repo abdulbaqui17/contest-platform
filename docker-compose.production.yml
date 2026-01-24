@@ -1,0 +1,265 @@
+services:
+  # ============================================================================
+  # DATABASE LAYER
+  # ============================================================================
+  
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: contest-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-contest}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-contest123}
+      POSTGRES_DB: ${POSTGRES_DB:-contest_db}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-contest} -d ${POSTGRES_DB:-contest_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - contest-network
+
+  # Redis Cache (for leaderboard + job queue)
+  redis:
+    image: redis:7-alpine
+    container_name: contest-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis123}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - contest-network
+
+  # ============================================================================
+  # CODE EXECUTION ENGINE (Judge0)
+  # ============================================================================
+  
+  # Judge0 Server
+  judge0-server:
+    image: judge0/judge0:1.13.1
+    container_name: contest-judge0
+    restart: unless-stopped
+    depends_on:
+      judge0-db:
+        condition: service_healthy
+      judge0-redis:
+        condition: service_healthy
+    environment:
+      # Database
+      POSTGRES_HOST: judge0-db
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: judge0
+      POSTGRES_PASSWORD: judge0password
+      POSTGRES_DB: judge0
+
+      # Redis (separate from main redis)
+      REDIS_HOST: judge0-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: judge0redis
+
+      # Execution limits
+      CPU_TIME_LIMIT: ${JUDGE0_CPU_TIME_LIMIT:-5}
+      CPU_EXTRA_TIME: ${JUDGE0_CPU_EXTRA_TIME:-1}
+      WALL_TIME_LIMIT: ${JUDGE0_WALL_TIME_LIMIT:-15}
+      MEMORY_LIMIT: ${JUDGE0_MEMORY_LIMIT:-262144}
+      STACK_LIMIT: ${JUDGE0_STACK_LIMIT:-65536}
+      MAX_PROCESSES_AND_OR_THREADS: ${JUDGE0_MAX_PROCESSES:-60}
+      ENABLE_PER_PROCESS_AND_THREAD_TIME_LIMIT: ${JUDGE0_PER_PROCESS_LIMIT:-false}
+      ENABLE_PER_PROCESS_AND_THREAD_MEMORY_LIMIT: ${JUDGE0_PER_PROCESS_MEMORY:-true}
+      MAX_FILE_SIZE: ${JUDGE0_MAX_FILE_SIZE:-4096}
+
+      # Workers
+      WORKERS: ${JUDGE0_WORKERS:-4}
+      
+      # Callback (for async submissions)
+      CALLBACKS_MAX_TRIES: 3
+      CALLBACKS_TIMEOUT: 5
+
+      # Security
+      ENABLE_ADDITIONAL_FILES: "true"
+      ENABLE_NETWORK: "false"
+
+      # Auth (optional, for production)
+      AUTHN_HEADER: ${JUDGE0_AUTHN_HEADER:-X-Auth-Token}
+      AUTHN_TOKEN: ${JUDGE0_AUTH_TOKEN:-}
+      AUTHZ_HEADER: ${JUDGE0_AUTHZ_HEADER:-X-Auth-Token}
+      AUTHZ_TOKEN: ${JUDGE0_AUTH_TOKEN:-}
+    ports:
+      - "${JUDGE0_PORT:-2358}:2358"
+    privileged: true  # Required for cgroups/sandboxing
+    networks:
+      - contest-network
+
+  # Judge0 Workers (handles actual code execution)
+  judge0-workers:
+    image: judge0/judge0:1.13.1
+    container_name: contest-judge0-workers
+    restart: unless-stopped
+    command: ["./scripts/workers"]
+    depends_on:
+      judge0-server:
+        condition: service_started
+      judge0-db:
+        condition: service_healthy
+      judge0-redis:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: judge0-db
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: judge0
+      POSTGRES_PASSWORD: judge0password
+      POSTGRES_DB: judge0
+      REDIS_HOST: judge0-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: judge0redis
+      
+      # Same limits as server
+      CPU_TIME_LIMIT: ${JUDGE0_CPU_TIME_LIMIT:-5}
+      CPU_EXTRA_TIME: ${JUDGE0_CPU_EXTRA_TIME:-1}
+      WALL_TIME_LIMIT: ${JUDGE0_WALL_TIME_LIMIT:-15}
+      MEMORY_LIMIT: ${JUDGE0_MEMORY_LIMIT:-262144}
+      STACK_LIMIT: ${JUDGE0_STACK_LIMIT:-65536}
+      WORKERS: ${JUDGE0_WORKERS:-4}
+    privileged: true
+    networks:
+      - contest-network
+
+  # Judge0's own PostgreSQL (separate from main DB)
+  judge0-db:
+    image: postgres:16-alpine
+    container_name: contest-judge0-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: judge0
+      POSTGRES_PASSWORD: judge0password
+      POSTGRES_DB: judge0
+    volumes:
+      - judge0_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U judge0 -d judge0"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - contest-network
+
+  # Judge0's own Redis (separate from main Redis)
+  judge0-redis:
+    image: redis:7-alpine
+    container_name: contest-judge0-redis
+    restart: unless-stopped
+    command: redis-server --requirepass judge0redis
+    volumes:
+      - judge0_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "judge0redis", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - contest-network
+
+  # ============================================================================
+  # APPLICATION LAYER
+  # ============================================================================
+
+  # Database migrations (runs once before backend starts)
+  db-migrate:
+    build:
+      context: ./db
+      dockerfile: Dockerfile
+    container_name: contest-db-migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-contest}:${POSTGRES_PASSWORD:-contest123}@postgres:5432/${POSTGRES_DB:-contest_db}
+    networks:
+      - contest-network
+
+  # Backend API + WebSocket Server
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: contest-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
+      judge0-server:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      
+      # Database
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-contest}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-contest123}
+      POSTGRES_DB: ${POSTGRES_DB:-contest_db}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-contest}:${POSTGRES_PASSWORD:-contest123}@postgres:5432/${POSTGRES_DB:-contest_db}
+      
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis123}
+      
+      # Auth
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      
+      # Judge0 (code execution)
+      JUDGE0_URL: http://judge0-server:2358
+      JUDGE0_AUTH_TOKEN: ${JUDGE0_AUTH_TOKEN:-}
+      JUDGE0_CALLBACK_URL: http://backend:3000/api/submissions/callback
+      
+      # Fallback (for development when Judge0 is unavailable)
+      FALLBACK_TO_MOCK: ${FALLBACK_TO_MOCK:-false}
+    ports:
+      - "${BACKEND_PORT:-3001}:3000"
+    networks:
+      - contest-network
+
+  # Frontend (React + Vite)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:3001}
+        VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:3001}
+    container_name: contest-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    networks:
+      - contest-network
+
+networks:
+  contest-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  judge0_postgres_data:
+  judge0_redis_data:
