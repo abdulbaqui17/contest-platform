@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ContestWebSocketService } from '../services/websocket';
+import { contestsAPI } from '../services/api';
 import { WebSocketEvent, LeaderboardUpdateEvent, QuestionBroadcastEvent } from '../types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -14,6 +15,42 @@ const Monitor: React.FC = () => {
   const [leaderboard, setLeaderboard] = useState<LeaderboardUpdateEvent['data']['topN']>([]);
   const [totalParticipants, setTotalParticipants] = useState(0);
   const [submissionCount, setSubmissionCount] = useState(0);
+  const [contestStatus, setContestStatus] = useState<'ACTIVE' | 'COMPLETED' | 'UPCOMING'>('ACTIVE');
+
+  // Fetch initial contest data via API
+  useEffect(() => {
+    const fetchContestData = async () => {
+      if (!id) return;
+      try {
+        const contest = await contestsAPI.getById(id);
+        
+        // Determine contest status
+        const now = new Date();
+        const startAt = new Date(contest.startAt);
+        const endAt = new Date(contest.endAt);
+        
+        if (now < startAt) {
+          setContestStatus('UPCOMING');
+        } else if (now > endAt) {
+          setContestStatus('COMPLETED');
+        } else {
+          setContestStatus('ACTIVE');
+        }
+
+        // Fetch leaderboard data from API
+        const leaderboardData = await contestsAPI.getLeaderboard(id);
+        if (leaderboardData && leaderboardData.leaderboard) {
+          setLeaderboard(leaderboardData.leaderboard);
+          setTotalParticipants(leaderboardData.totalParticipants || leaderboardData.leaderboard.length);
+          setSubmissionCount(leaderboardData.leaderboard.reduce((sum: number, entry: any) => sum + (entry.questionsAnswered || 0), 0));
+        }
+      } catch (error) {
+        console.error('Error fetching contest data:', error);
+      }
+    };
+
+    fetchContestData();
+  }, [id]);
 
   useEffect(() => {
     if (!id) return;
@@ -49,6 +86,16 @@ const Monitor: React.FC = () => {
       case 'contest_end':
         setCurrentQuestion(null);
         setTimer(null);
+        setContestStatus('COMPLETED');
+        // Handle final leaderboard from contest_end event
+        if (event.data.finalLeaderboard && event.data.finalLeaderboard.length > 0) {
+          setLeaderboard(event.data.finalLeaderboard);
+          setTotalParticipants(event.data.totalParticipants || event.data.finalLeaderboard.length);
+          setSubmissionCount(event.data.finalLeaderboard.reduce((sum: number, entry: any) => sum + (entry.questionsAnswered || 0), 0));
+        }
+        break;
+      case 'contest_start':
+        setContestStatus('ACTIVE');
         break;
     }
   };
@@ -76,9 +123,23 @@ const Monitor: React.FC = () => {
               <p className="text-zinc-500 text-sm">Contest ID: {id}</p>
             </div>
           </div>
-          <Badge variant="active" className="h-8 px-4">
-            <span className="h-2 w-2 bg-green-400 rounded-full mr-2 animate-pulse" />
-            Live
+          <Badge variant={contestStatus === 'COMPLETED' ? 'default' : 'active'} className="h-8 px-4">
+            {contestStatus === 'COMPLETED' ? (
+              <>
+                <span className="h-2 w-2 bg-zinc-400 rounded-full mr-2" />
+                Completed
+              </>
+            ) : contestStatus === 'UPCOMING' ? (
+              <>
+                <span className="h-2 w-2 bg-yellow-400 rounded-full mr-2 animate-pulse" />
+                Upcoming
+              </>
+            ) : (
+              <>
+                <span className="h-2 w-2 bg-green-400 rounded-full mr-2 animate-pulse" />
+                Live
+              </>
+            )}
           </Badge>
         </div>
 

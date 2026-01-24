@@ -1,7 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { Button } from '../components/ui/button';
-import { Trophy, Users, Zap } from 'lucide-react';
+import { Trophy, Users, Zap, Code, CircleHelp } from 'lucide-react';
 
 const Landing: React.FC = () => {
   const navigate = useNavigate();
@@ -15,8 +15,8 @@ const Landing: React.FC = () => {
   }, [navigate]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-600 via-purple-700 to-indigo-800 flex flex-col items-center justify-center p-8">
-      <div className="text-center max-w-2xl">
+    <div className="min-h-screen bg-linear-to-br from-purple-600 via-purple-700 to-indigo-800 flex flex-col items-center justify-center p-8">
+      <div className="text-center max-w-3xl">
         {/* Logo/Icon */}
         <div className="flex justify-center mb-8">
           <div className="h-20 w-20 rounded-2xl bg-white/10 backdrop-blur-sm flex items-center justify-center">
@@ -29,34 +29,46 @@ const Landing: React.FC = () => {
         </h1>
         
         <p className="text-xl text-white/90 mb-12 leading-relaxed">
-          Compete in real-time coding contests.<br />
+          Compete in real-time contests. Practice coding problems.<br />
           Challenge yourself. Climb the leaderboard.
         </p>
 
         {/* Features */}
-        <div className="flex justify-center gap-8 mb-12">
+        <div className="flex justify-center gap-6 mb-12 flex-wrap">
           <div className="text-center">
             <div className="h-12 w-12 rounded-lg bg-white/10 flex items-center justify-center mx-auto mb-2">
-              <Zap className="h-6 w-6 text-yellow-300" />
+              <Trophy className="h-6 w-6 text-yellow-300" />
+            </div>
+            <span className="text-white/80 text-sm">Contests</span>
+          </div>
+          <div className="text-center">
+            <div className="h-12 w-12 rounded-lg bg-white/10 flex items-center justify-center mx-auto mb-2">
+              <Code className="h-6 w-6 text-green-300" />
+            </div>
+            <span className="text-white/80 text-sm">Coding</span>
+          </div>
+          <div className="text-center">
+            <div className="h-12 w-12 rounded-lg bg-white/10 flex items-center justify-center mx-auto mb-2">
+              <CircleHelp className="h-6 w-6 text-purple-300" />
+            </div>
+            <span className="text-white/80 text-sm">MCQ</span>
+          </div>
+          <div className="text-center">
+            <div className="h-12 w-12 rounded-lg bg-white/10 flex items-center justify-center mx-auto mb-2">
+              <Zap className="h-6 w-6 text-orange-300" />
             </div>
             <span className="text-white/80 text-sm">Real-time</span>
           </div>
           <div className="text-center">
             <div className="h-12 w-12 rounded-lg bg-white/10 flex items-center justify-center mx-auto mb-2">
-              <Users className="h-6 w-6 text-green-300" />
+              <Users className="h-6 w-6 text-blue-300" />
             </div>
             <span className="text-white/80 text-sm">Compete</span>
-          </div>
-          <div className="text-center">
-            <div className="h-12 w-12 rounded-lg bg-white/10 flex items-center justify-center mx-auto mb-2">
-              <Trophy className="h-6 w-6 text-orange-300" />
-            </div>
-            <span className="text-white/80 text-sm">Leaderboard</span>
           </div>
         </div>
 
         {/* CTA Buttons */}
-        <div className="flex gap-4 justify-center flex-wrap">
+        <div className="flex gap-4 justify-center flex-wrap mb-8">
           <Link to="/signin">
             <Button 
               size="lg" 
@@ -77,8 +89,33 @@ const Landing: React.FC = () => {
           </Link>
         </div>
 
+        {/* Quick Access - Practice without signing in */}
+        <div className="mb-12">
+          <p className="text-white/60 text-sm mb-4">Or explore practice problems:</p>
+          <div className="flex gap-4 justify-center flex-wrap">
+            <Link to="/practice/coding">
+              <Button 
+                size="sm" 
+                className="bg-green-600/80 hover:bg-green-500 text-white font-medium px-6 rounded-lg"
+              >
+                <Code className="h-4 w-4 mr-2" />
+                Practice Coding
+              </Button>
+            </Link>
+            <Link to="/practice/mcq">
+              <Button 
+                size="sm" 
+                className="bg-purple-600/80 hover:bg-purple-500 text-white font-medium px-6 rounded-lg"
+              >
+                <CircleHelp className="h-4 w-4 mr-2" />
+                Practice MCQ
+              </Button>
+            </Link>
+          </div>
+        </div>
+
         {/* Admin Link */}
-        <div className="mt-16">
+        <div>
           <Link 
             to="/admin/login" 
             className="text-white/70 hover:text-white/90 text-sm underline underline-offset-4 transition-colors"

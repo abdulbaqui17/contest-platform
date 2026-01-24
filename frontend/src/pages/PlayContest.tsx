@@ -5,6 +5,7 @@ import { Card, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Trophy, Clock, Check, X } from 'lucide-react';
 import UserProfileDropdown from '../components/UserProfileDropdown';
+import { CodingChallenge } from '../components/CodingChallenge';
 
 interface MCQOption {
   id: string;
@@ -15,8 +16,10 @@ interface Question {
   questionId: string;
   title: string;
   description: string;
+  type?: 'MCQ' | 'CODING';
   mcqOptions?: MCQOption[];
   timeLimit: number;
+  memoryLimit?: number;
   points: number;
   questionNumber: number;
   totalQuestions: number;
@@ -220,10 +223,11 @@ const PlayContest: React.FC = () => {
     switch (message.event) {
       case 'question_broadcast':
         console.log('📝 Received question:', message.data.questionNumber, 'of', message.data.totalQuestions);
+        console.log('🔍 Question type:', message.data.type);
         console.log('🔍 MCQ Options received:', message.data.mcqOptions);
         
-        // CRITICAL: Validate mcqOptions exist
-        if (!message.data.mcqOptions || message.data.mcqOptions.length === 0) {
+        // CRITICAL: For MCQ questions, validate mcqOptions exist
+        if (message.data.type === 'MCQ' && (!message.data.mcqOptions || message.data.mcqOptions.length === 0)) {
           console.error('❌ ERROR: No MCQ options in question_broadcast!', message.data);
           setError('Question data is incomplete. Please refresh.');
           return;
@@ -243,8 +247,10 @@ const PlayContest: React.FC = () => {
           questionId: message.data.questionId,
           title: message.data.title,
           description: message.data.description,
+          type: message.data.type || 'MCQ', // Default to MCQ for backwards compatibility
           mcqOptions: message.data.mcqOptions, // Always from server
           timeLimit: message.data.timeLimit,
+          memoryLimit: message.data.memoryLimit,
           points: message.data.points,
           questionNumber: message.data.questionNumber,
           totalQuestions: message.data.totalQuestions
@@ -252,6 +258,7 @@ const PlayContest: React.FC = () => {
         
         console.log('✅ Setting question state:', {
           questionId: newQuestion.questionId,
+          type: newQuestion.type,
           optionsCount: newQuestion.mcqOptions?.length
         });
         
@@ -577,7 +584,7 @@ const PlayContest: React.FC = () => {
                       }`}>
                         #{entry.rank}
                       </span>
-                      <span className={`truncate max-w-[100px] ${
+                      <span className={`truncate max-w-25 ${
                         entry.userId === localStorage.getItem('userId')
                           ? 'text-purple-300 font-semibold'
                           : 'text-zinc-300'
@@ -618,7 +625,7 @@ const PlayContest: React.FC = () => {
                 : 'bg-zinc-800 border-zinc-700'
             }`}>
               <Clock className={`h-5 w-5 ${timeRemaining < 10 ? 'text-red-400' : 'text-zinc-400'}`} />
-              <span className={`text-3xl font-bold min-w-[60px] text-center ${
+              <span className={`text-3xl font-bold min-w-15 text-center ${
                 timeRemaining < 10 ? 'text-red-400' : 'text-purple-400'
               }`}>
                 {Math.ceil(timeRemaining)}s
@@ -628,8 +635,44 @@ const PlayContest: React.FC = () => {
           </div>
         </div>
 
-        {/* Question Content */}
-        <div className="p-8 max-w-4xl mx-auto w-full">
+        {/* Question Content - MCQ or Coding */}
+        <div className={`${currentQuestion.type === 'CODING' ? 'flex-1 min-h-0' : 'p-8 max-w-4xl mx-auto w-full'}`}>
+          {currentQuestion.type === 'CODING' ? (
+            /* Coding Challenge View */
+            <CodingChallenge
+              question={{
+                id: currentQuestion.questionId,
+                title: currentQuestion.title,
+                description: currentQuestion.description,
+                timeLimit: currentQuestion.timeLimit,
+                memoryLimit: currentQuestion.memoryLimit,
+              }}
+              contestId={id!}
+              onSubmissionComplete={(result) => {
+                console.log('📝 Coding submission complete:', result);
+                if (result.isCorrect) {
+                  setCurrentScore(prev => prev + result.points);
+                  setSubmissionResult({
+                    isCorrect: true,
+                    pointsEarned: result.points,
+                    currentScore: currentScore + result.points,
+                    currentRank: currentRank
+                  });
+                }
+                // Request next question after successful submission
+                setTimeout(() => {
+                  if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                      event: 'resync',
+                      data: { contestId: id }
+                    }));
+                  }
+                }, 2000);
+              }}
+            />
+          ) : (
+            /* MCQ Question View */
+            <>
           {/* Question Header */}
           <div className="mb-8 pb-6 border-b-2 border-zinc-800">
             <div className="flex justify-between items-center mb-4">
@@ -732,6 +775,8 @@ const PlayContest: React.FC = () => {
               ? 'Waiting for next question...'
               : 'Submit Answer'}
           </Button>
+            </>
+          )}
         </div>
       </div>
     </div>
