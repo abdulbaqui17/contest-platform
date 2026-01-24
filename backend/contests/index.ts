@@ -312,6 +312,140 @@ router.get("/leaderboard/:contestId/me", async (req, res) => {
   }
 });
 
+// GET /contest/:contestId/leaderboard - Get leaderboard for a contest
+router.get("/:contestId/leaderboard", async (req, res) => {
+  try {
+    const { contestId } = req.params;
+    
+    // Check if contest exists
+    const contest = await prisma.contest.findUnique({
+      where: { id: contestId },
+      include: {
+        participants: true
+      }
+    });
+    
+    if (!contest) {
+      return res.status(404).json({ error: "Contest not found" });
+    }
+    
+    // First try to get from LeaderboardSnapshot (for completed contests)
+    const snapshots = await prisma.leaderboardSnapshot.findMany({
+      where: { contestId },
+      include: {
+        user: {
+          select: { id: true, name: true }
+        }
+      },
+      orderBy: { rank: 'asc' }
+    });
+    
+    if (snapshots.length > 0) {
+      // Use persisted leaderboard data
+      const leaderboard = snapshots.map(s => ({
+        rank: s.rank,
+        userId: s.userId,
+        userName: s.user.name,
+        score: s.score,
+        questionsAnswered: 0 // Will be calculated below
+      }));
+      
+      // Get submission counts
+      const submissionCounts = await prisma.submission.groupBy({
+        by: ['userId'],
+        where: {
+          contestId,
+          userId: { in: leaderboard.map(l => l.userId) },
+          isCorrect: true
+        },
+        _count: { userId: true }
+      });
+      
+      const countMap = new Map(submissionCounts.map(s => [s.userId, s._count.userId]));
+      leaderboard.forEach(entry => {
+        entry.questionsAnswered = countMap.get(entry.userId) || 0;
+      });
+      
+      return res.json({
+        leaderboard,
+        totalParticipants: contest.participants.length
+      });
+    }
+    
+    // For active contests, calculate from submissions
+    const participants = await prisma.contestParticipant.findMany({
+      where: { contestId },
+      include: {
+        user: {
+          select: { id: true, name: true }
+        }
+      }
+    });
+    
+    // Get correct submissions with points
+    const submissions = await prisma.submission.findMany({
+      where: {
+        contestId,
+        isCorrect: true
+      },
+      include: {
+        question: {
+          include: {
+            contests: {
+              where: { contestId },
+              select: { points: true }
+            }
+          }
+        }
+      }
+    });
+    
+    // Calculate scores
+    const scoreMap = new Map<string, { score: number; questionsAnswered: number }>();
+    
+    // Initialize all participants with 0
+    participants.forEach(p => {
+      scoreMap.set(p.userId, { score: 0, questionsAnswered: 0 });
+    });
+    
+    // Add up scores from correct submissions
+    submissions.forEach(s => {
+      const current = scoreMap.get(s.userId) || { score: 0, questionsAnswered: 0 };
+      const points = s.question.contests[0]?.points || 10;
+      scoreMap.set(s.userId, {
+        score: current.score + points,
+        questionsAnswered: current.questionsAnswered + 1
+      });
+    });
+    
+    // Build leaderboard
+    const leaderboard = participants.map(p => {
+      const data = scoreMap.get(p.userId) || { score: 0, questionsAnswered: 0 };
+      return {
+        userId: p.userId,
+        userName: p.user.name,
+        score: data.score,
+        questionsAnswered: data.questionsAnswered,
+        rank: 0 // Will be calculated
+      };
+    });
+    
+    // Sort by score descending and assign ranks
+    leaderboard.sort((a, b) => b.score - a.score);
+    leaderboard.forEach((entry, index) => {
+      entry.rank = index + 1;
+    });
+    
+    res.json({
+      leaderboard,
+      totalParticipants: participants.length
+    });
+  } catch (error) {
+    console.error("Get leaderboard error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // DELETE /contests/:contestId - Delete a contest
 router.delete("/:contestId", async (req, res) => {
   try {

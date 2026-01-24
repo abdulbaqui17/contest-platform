@@ -352,6 +352,7 @@ export class ContestOrchestrator {
       title: cq.question.title,
       description: cq.question.description,
       timeLimit: cq.timeLimit,
+      memoryLimit: cq.question.memoryLimit, // For coding questions
       points: cq.points,
     }));
   }
@@ -424,7 +425,7 @@ export class ContestOrchestrator {
     question: any,
     questionNumber: number
   ): Promise<void> {
-    // CRITICAL: Load mcqOptions BEFORE broadcasting
+    // CRITICAL: Load mcqOptions BEFORE broadcasting (only for MCQ questions)
     const mcqOptions = question.type === "MCQ"
       ? await prisma.mcqOption.findMany({ 
           where: { questionId: question.id },
@@ -432,7 +433,7 @@ export class ContestOrchestrator {
         }).then(opts => opts.map(opt => ({ id: opt.id, text: opt.text })))
       : [];
 
-    console.log(`📝 Broadcasting question ${questionNumber} with ${mcqOptions.length} MCQ options`);
+    console.log(`📝 Broadcasting question ${questionNumber} (${question.type}) with ${mcqOptions.length} MCQ options`);
     
     this.eventEmitter.broadcastToContest(contestId, {
       event: "question_broadcast",
@@ -444,6 +445,7 @@ export class ContestOrchestrator {
         description: question.description,
         mcqOptions: mcqOptions,
         timeLimit: question.timeLimit,
+        memoryLimit: question.memoryLimit, // For coding questions
         points: question.points,
         questionNumber,
         totalQuestions: this.activeContests.get(contestId)?.questions.length || 0,
