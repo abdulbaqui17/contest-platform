@@ -12,6 +12,11 @@ import Questions from './pages/Questions';
 import Monitor from './pages/Monitor';
 import ImportQuestion from './pages/ImportQuestion';
 import CreateQuestion from './pages/CreateQuestion';
+import PracticeCoding from './pages/PracticeCoding';
+import SolveCoding from './pages/SolveCoding';
+import PracticeMCQ from './pages/PracticeMCQ';
+import Profile from './pages/Profile';
+import Submissions from './pages/Submissions';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
@@ -23,6 +28,17 @@ function App() {
         <Route path="/signup" element={<Signup />} />
         <Route path="/contests" element={<UserContests />} />
         <Route path="/contest/:id/play" element={<PlayContest />} />
+        
+        {/* Practice Pages - Standalone problems without contests */}
+        <Route path="/practice/coding" element={<PracticeCoding />} />
+        <Route path="/practice/coding/:id" element={<SolveCoding />} />
+        <Route path="/practice/mcq" element={<PracticeMCQ />} />
+        
+        {/* User Profile & Stats */}
+        <Route path="/profile" element={<Profile />} />
+        <Route path="/submissions" element={<Submissions />} />
+        
+        {/* Admin Routes */}
         <Route path="/admin/login" element={<Login />} />
         <Route path="/admin/contests" element={<ProtectedRoute><Contests /></ProtectedRoute>} />
         <Route path="/admin/contests/new" element={<ProtectedRoute><CreateContest /></ProtectedRoute>} />

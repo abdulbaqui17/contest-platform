@@ -89,7 +89,7 @@ const UserProfileDropdown: React.FC = () => {
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 transition-colors border border-zinc-700"
       >
-        <div className="h-8 w-8 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white text-sm font-semibold">
+        <div className="h-8 w-8 rounded-full bg-linear-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white text-sm font-semibold">
           {initials}
         </div>
         <span className="text-zinc-100 font-medium hidden sm:block">{user.name}</span>
@@ -100,9 +100,9 @@ const UserProfileDropdown: React.FC = () => {
       {isOpen && (
         <div className="absolute right-0 mt-2 w-72 rounded-xl bg-zinc-900 border border-zinc-700 shadow-xl z-50 overflow-hidden">
           {/* User Info Header */}
-          <div className="p-4 bg-gradient-to-br from-purple-600/20 to-indigo-600/20 border-b border-zinc-700">
+          <div className="p-4 bg-linear-to-br from-purple-600/20 to-indigo-600/20 border-b border-zinc-700">
             <div className="flex items-center gap-3">
-              <div className="h-12 w-12 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white text-lg font-semibold">
+              <div className="h-12 w-12 rounded-full bg-linear-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white text-lg font-semibold">
                 {initials}
               </div>
               <div>
