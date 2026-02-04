@@ -8,11 +8,13 @@ interface ContestEventEmitter {
 interface ContestState {
   contestId: string;
   questions: Array<{
+    contestQuestionId: string;
     id: string;
     type: string;
     title: string;
     description: string;
     timeLimit: number;
+    memoryLimit?: number | null;
     points: number;
   }>;
   currentQuestionIndex: number;
@@ -347,6 +349,7 @@ export class ContestOrchestrator {
     });
 
     return contestQuestions.map((cq) => ({
+      contestQuestionId: cq.id,
       id: cq.questionId,
       type: cq.question.type,
       title: cq.question.title,
@@ -439,7 +442,7 @@ export class ContestOrchestrator {
       event: "question_broadcast",
       data: {
         questionId: question.id,
-        contestQuestionId: question.id, // placeholder
+        contestQuestionId: question.contestQuestionId,
         type: question.type,
         title: question.title,
         description: question.description,

@@ -83,8 +83,9 @@ def twoSum(nums: List[int], target: int) -> List[int]:
 public int[] twoSum(int[] nums, int target)
 \`\`\`
 `,
-      memoryLimit: 256000, // 256 MB in KB
-      timeLimit: 2000,     // 2 seconds in milliseconds
+      memoryLimit: 256, // MB
+      timeLimit: 2000,  // ms
+      functionName: "solution",
     },
   });
 
@@ -215,8 +216,9 @@ public void reverseString(char[] s)
 
 > **Note:** Do not return anything, modify \`s\` in-place instead.
 `,
-      memoryLimit: 128000, // 128 MB in KB
-      timeLimit: 1000,     // 1 second in milliseconds
+      memoryLimit: 128, // MB
+      timeLimit: 1000,  // ms
+      functionName: "solution",
     },
   });
 
@@ -350,8 +352,9 @@ function isPalindrome(s: string): boolean
 def isPalindrome(s: str) -> bool:
 \`\`\`
 `,
-      memoryLimit: 128000,
+      memoryLimit: 128,
       timeLimit: 1000,
+      functionName: "solution",
     },
   });
 

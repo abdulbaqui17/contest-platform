@@ -53,7 +53,7 @@ export const JoinResponseSchema = z.object({
 // Contest Runtime Schemas
 export const CurrentQuestionSchema = z.object({
   id: z.string(),
-  type: z.enum(['MCQ', 'DSA', 'SANDBOX']),
+  type: z.enum(['MCQ', 'CODING', 'DSA', 'SANDBOX']),
   title: z.string(),
   description: z.string(),
   mcqOptions: z.array(z.object({

@@ -117,7 +117,7 @@ const PracticeMCQ: React.FC = () => {
                       optionClass = 'bg-red-900/30 border-red-600';
                     }
                   } else if (isSelected) {
-                    optionClass = 'bg-purple-900/30 border-purple-500';
+                    optionClass = 'bg-orange-500/20 border-orange-400';
                   }
 
                   return (
@@ -131,7 +131,7 @@ const PracticeMCQ: React.FC = () => {
                     >
                       <span className={`w-8 h-8 flex items-center justify-center rounded-full font-semibold text-sm ${
                         isSelected && !showResult
-                          ? 'bg-purple-500 text-white'
+                          ? 'bg-orange-500 text-black'
                           : showResult && isCorrect
                             ? 'bg-green-500 text-white'
                             : showResult && isSelected && !isCorrect
@@ -204,7 +204,7 @@ const PracticeMCQ: React.FC = () => {
       <header className="border-b border-zinc-800 bg-zinc-900/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <CircleHelp className="h-8 w-8 text-purple-500" />
+            <CircleHelp className="h-8 w-8 text-orange-500" />
             <h1 className="text-2xl font-bold text-zinc-100">Practice MCQ</h1>
           </div>
           <div className="flex items-center gap-4">
@@ -221,7 +221,7 @@ const PracticeMCQ: React.FC = () => {
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         {/* Hero Section */}
-        <div className="mb-8 p-6 bg-gradient-to-r from-purple-900/30 to-violet-900/30 rounded-xl border border-purple-800/50">
+        <div className="mb-8 p-6 bg-gradient-to-r from-orange-900/30 to-amber-900/30 rounded-xl border border-orange-800/50">
           <h2 className="text-3xl font-bold text-zinc-100 mb-2">
             📝 Multiple Choice Questions
           </h2>
@@ -229,8 +229,8 @@ const PracticeMCQ: React.FC = () => {
             Practice MCQ questions at your own pace. Test your knowledge across various topics.
           </p>
           {score.total > 0 && (
-            <div className="mt-4 inline-block px-4 py-2 bg-purple-600/30 rounded-lg">
-              <span className="text-purple-300 font-medium">
+            <div className="mt-4 inline-block px-4 py-2 bg-orange-500/20 rounded-lg">
+              <span className="text-orange-300 font-medium">
                 Session Score: {score.correct}/{score.total} ({Math.round((score.correct / score.total) * 100)}%)
               </span>
             </div>
@@ -253,7 +253,7 @@ const PracticeMCQ: React.FC = () => {
           </Card>
           <Card className="bg-zinc-900 border-zinc-800">
             <CardContent className="p-4 text-center">
-              <div className="text-3xl font-bold text-purple-400">{score.total}</div>
+              <div className="text-3xl font-bold text-orange-400">{score.total}</div>
               <div className="text-sm text-zinc-400">Attempted</div>
             </CardContent>
           </Card>
@@ -262,7 +262,7 @@ const PracticeMCQ: React.FC = () => {
         {/* Questions List */}
         {loading ? (
           <div className="flex justify-center py-12">
-            <div className="h-8 w-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+            <div className="h-8 w-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : questions.length === 0 ? (
           <Card className="bg-zinc-900 border-zinc-800">
@@ -277,7 +277,7 @@ const PracticeMCQ: React.FC = () => {
             {questions.map((question, index) => (
               <Card 
                 key={question.id} 
-                className="bg-zinc-900 border-zinc-800 hover:border-purple-600/50 transition-all cursor-pointer"
+                className="bg-zinc-900 border-zinc-800 hover:border-orange-500/50 transition-all cursor-pointer"
                 onClick={() => startPractice(question)}
               >
                 <CardContent className="p-4">
@@ -285,7 +285,7 @@ const PracticeMCQ: React.FC = () => {
                     <div className="flex items-center gap-4">
                       <span className="text-zinc-500 font-mono w-8">{index + 1}.</span>
                       <div>
-                        <h3 className="text-lg font-semibold text-zinc-100 hover:text-purple-400 transition-colors">
+                        <h3 className="text-lg font-semibold text-zinc-100 hover:text-orange-400 transition-colors">
                           {question.title}
                         </h3>
                         <p className="text-sm text-zinc-500 mt-1 line-clamp-1">
@@ -294,7 +294,7 @@ const PracticeMCQ: React.FC = () => {
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/50">
+                      <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/50">
                         {question.mcqOptions?.length || 0} options
                       </Badge>
                       <Button variant="primary" size="sm">

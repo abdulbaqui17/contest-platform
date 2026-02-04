@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Plus, LogOut, Monitor, Pencil, Trash2, Eye } from 'lucide-react';
+import { PublicWebSocketService, type PublicWebSocketEvent } from '../services/websocket';
 
 const Contests: React.FC = () => {
   const [contests, setContests] = useState<ContestSummary[]>([]);
@@ -27,10 +28,19 @@ const Contests: React.FC = () => {
 
     fetchContests();
 
-    // Auto-refresh every 30 seconds to update contest statuses
-    const interval = setInterval(fetchContests, 30000);
+    const wsService = new PublicWebSocketService(
+      (event: PublicWebSocketEvent) => {
+        if (event.event === 'contests_update') {
+          setContests(event.data.contests);
+        }
+      },
+      (err) => console.error('Public WebSocket error:', err),
+      () => {}
+    );
 
-    return () => clearInterval(interval);
+    wsService.connect(true);
+
+    return () => wsService.disconnect();
   }, []);
 
   const handleLogout = () => {
@@ -94,7 +104,7 @@ const Contests: React.FC = () => {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-8 w-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+          <div className="h-8 w-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
           <p className="text-zinc-400">Loading contests...</p>
         </div>
       </div>

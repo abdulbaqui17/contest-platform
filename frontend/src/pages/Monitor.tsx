@@ -147,8 +147,8 @@ const Monitor: React.FC = () => {
         <div className="grid grid-cols-3 gap-4 mb-8">
           <Card>
             <CardContent className="p-6 flex items-center gap-4">
-              <div className="h-12 w-12 rounded-lg bg-purple-500/20 flex items-center justify-center">
-                <Users className="h-6 w-6 text-purple-400" />
+              <div className="h-12 w-12 rounded-lg bg-orange-500/20 flex items-center justify-center">
+                <Users className="h-6 w-6 text-orange-400" />
               </div>
               <div>
                 <p className="text-sm text-zinc-500">Participants</p>
@@ -187,7 +187,7 @@ const Monitor: React.FC = () => {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <FileCheck className="h-5 w-5 text-purple-400" />
+                <FileCheck className="h-5 w-5 text-orange-400" />
                 Current Question
               </CardTitle>
             </CardHeader>

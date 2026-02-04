@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardTitle } from '../components/ui/
 import { Badge } from '../components/ui/badge';
 import { Trophy, Play } from 'lucide-react';
 import UserProfileDropdown from '../components/UserProfileDropdown';
+import { PublicWebSocketService, type PublicWebSocketEvent } from '../services/websocket';
 
 const UserContests: React.FC = () => {
   const [contests, setContests] = useState<ContestSummary[]>([]);
@@ -29,10 +30,19 @@ const UserContests: React.FC = () => {
 
     fetchContests();
 
-    // Auto-refresh every 30 seconds to update contest statuses
-    const interval = setInterval(fetchContests, 30000);
+    const wsService = new PublicWebSocketService(
+      (event: PublicWebSocketEvent) => {
+        if (event.event === 'contests_update') {
+          setContests(event.data.contests);
+        }
+      },
+      (err) => console.error('Public WebSocket error:', err),
+      () => {}
+    );
 
-    return () => clearInterval(interval);
+    wsService.connect(true);
+
+    return () => wsService.disconnect();
   }, []);
 
   const handleJoin = async (contestId: string) => {
@@ -70,7 +80,7 @@ const UserContests: React.FC = () => {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-8 w-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+          <div className="h-8 w-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
           <p className="text-zinc-400">Loading contests...</p>
         </div>
       </div>
@@ -83,7 +93,15 @@ const UserContests: React.FC = () => {
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-3xl font-bold text-zinc-100">Contests</h1>
-          <UserProfileDropdown />
+          <div className="flex items-center gap-3">
+            <Button variant="secondary" onClick={() => navigate('/practice/coding')}>
+              Practice Coding
+            </Button>
+            <Button variant="secondary" onClick={() => navigate('/practice/mcq')}>
+              Practice MCQ
+            </Button>
+            <UserProfileDropdown />
+          </div>
         </div>
 
         {error && (

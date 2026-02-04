@@ -262,7 +262,7 @@ const Submissions: React.FC = () => {
                           <div>
                             <Link 
                               to={`/practice/coding/${sub.question.id}`}
-                              className="text-gray-900 font-medium hover:text-purple-600"
+                            className="text-gray-900 font-medium hover:text-orange-600"
                               onClick={(e) => e.stopPropagation()}
                             >
                               {sub.question.title}

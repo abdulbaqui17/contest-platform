@@ -16,11 +16,12 @@ export interface ContestService {
   getCurrentQuestion(contestId: string, userId: string): Promise<{
     questionId: string;
     contestQuestionId: string;
-    type: "MCQ" | "DSA" | "SANDBOX";
+    type: "MCQ" | "CODING" | "DSA" | "SANDBOX";
     title: string;
     description: string;
     mcqOptions?: Array<{ id: string; text: string }>;
     timeLimit: number;
+    memoryLimit?: number | null;
     points: number;
     questionNumber: number;
     totalQuestions: number;

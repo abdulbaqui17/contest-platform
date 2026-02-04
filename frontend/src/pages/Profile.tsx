@@ -130,20 +130,20 @@ const Profile: React.FC = () => {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Target className="h-5 w-5 text-purple-600" />
+                  <Target className="h-5 w-5 text-orange-500" />
                   Progress
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-center mb-6">
-                  <div className="text-5xl font-bold text-purple-600">{stats.totalSolved}</div>
+                  <div className="text-5xl font-bold text-orange-500">{stats.totalSolved}</div>
                   <div className="text-gray-500">Problems Solved</div>
                 </div>
                 
                 {/* Progress Bar */}
                 <div className="w-full bg-gray-200 rounded-full h-3 mb-4">
                   <div 
-                    className="bg-purple-600 h-3 rounded-full transition-all duration-500"
+                    className="bg-orange-500 h-3 rounded-full transition-all duration-500"
                     style={{ width: `${Math.min(progressPercentage, 100)}%` }}
                   />
                 </div>
@@ -279,7 +279,7 @@ const Profile: React.FC = () => {
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
                   <span className="flex items-center gap-2">
-                    <Zap className="h-5 w-5 text-purple-600" />
+                  <Zap className="h-5 w-5 text-orange-500" />
                     Recent Submissions
                   </span>
                   <Link to="/submissions">
@@ -304,7 +304,7 @@ const Profile: React.FC = () => {
                           <div>
                             <Link 
                               to={`/practice/coding/${sub.question.id}`}
-                              className="font-medium text-gray-900 hover:text-purple-600"
+                            className="font-medium text-gray-900 hover:text-orange-600"
                             >
                               {sub.question.title}
                             </Link>
@@ -339,7 +339,7 @@ const Profile: React.FC = () => {
                 {stats.solvedProblems.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     No problems solved yet. 
-                    <Link to="/practice/coding" className="text-purple-600 ml-1 hover:underline">
+                    <Link to="/practice/coding" className="text-orange-500 ml-1 hover:underline">
                       Start practicing!
                     </Link>
                   </div>

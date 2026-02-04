@@ -1,9 +1,17 @@
 import { Router } from "express";
 import { prisma } from "../../db/prismaClient";
-import { authenticateToken, type AuthRequest } from "../middleware/auth";
-import { ContestOrchestrator } from "../services/contest.orchestrator";
+import { authenticateToken, requireAdmin, type AuthRequest } from "../middleware/auth";
+import { ContestOrchestrator, getRuntimeState } from "../services/contest.orchestrator";
+import { MockContestService } from "../services/mocks";
+import { RedisLeaderboardService } from "../services/leaderboard.service";
+import { PrismaSubmissionService } from "../services/submission.service";
+import { redis } from "../redis";
+import { getPublicWs } from "../websocket/public";
 
 const router = Router();
+const contestService = new MockContestService();
+const leaderboardService = new RedisLeaderboardService(redis);
+const submissionService = new PrismaSubmissionService(leaderboardService);
 
 // GET /contests - List all contests (active, upcoming, past)
 router.get("/", async (req, res) => {
@@ -107,6 +115,12 @@ router.post("/", async (req, res) => {
         console.log(`🚀 Started orchestrator for newly created ACTIVE contest: ${contest.id}`);
       }
     }
+
+    const publicWs = getPublicWs();
+    if (publicWs) {
+      publicWs.scheduleContest(contest.id, startDate, endDate);
+      await publicWs.broadcastContestsUpdate();
+    }
     
     res.status(201).json(contest);
   } catch (error) {
@@ -150,6 +164,144 @@ router.get("/:contestId", async (req, res) => {
     res.json(formattedContest);
   } catch (error) {
     console.error("Get contest error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /contests/:contestId/questions - List contest questions (admin)
+router.get("/:contestId/questions", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { contestId } = req.params;
+
+    const contest = await prisma.contest.findUnique({
+      where: { id: contestId },
+      include: {
+        questions: {
+          include: {
+            question: {
+              include: {
+                mcqOptions: true,
+                testCases: { orderBy: { order: "asc" } },
+              },
+            },
+          },
+          orderBy: { orderIndex: "asc" },
+        },
+      },
+    });
+
+    if (!contest) {
+      return res.status(404).json({ error: "Contest not found" });
+    }
+
+    const questions = contest.questions.map((cq) => ({
+      id: cq.questionId,
+      type: cq.question.type,
+      title: cq.question.title,
+      description: cq.question.description,
+      options: cq.question.mcqOptions,
+      testCases: cq.question.testCases,
+      points: cq.points,
+      timeLimit: cq.timeLimit,
+    }));
+
+    res.json(questions);
+  } catch (error) {
+    console.error("Get contest questions error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /contests/:contestId/questions - Create and attach a question to contest (admin)
+router.post("/:contestId/questions", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { contestId } = req.params;
+    const {
+      type = "MCQ",
+      title,
+      description,
+      options,
+      testCases,
+      points = 10,
+      timeLimit = 60,
+      difficulty,
+      functionName,
+      memoryLimit,
+    } = req.body;
+
+    if (!title || !description) {
+      return res.status(400).json({ error: "Title and description are required" });
+    }
+
+    const contest = await prisma.contest.findUnique({
+      where: { id: contestId },
+    });
+
+    if (!contest) {
+      return res.status(404).json({ error: "Contest not found" });
+    }
+
+    if (type === "MCQ" && (!options || options.length === 0)) {
+      return res.status(400).json({ error: "MCQ options are required" });
+    }
+
+    const existingCount = await prisma.contestQuestion.count({
+      where: { contestId },
+    });
+
+    const isCodeQuestion = ["CODING", "DSA", "SANDBOX"].includes(type);
+    const question = await prisma.question.create({
+      data: {
+        type,
+        title,
+        description,
+        difficulty,
+        functionName,
+        memoryLimit: isCodeQuestion ? memoryLimit ?? 256 : null,
+        timeLimit: isCodeQuestion ? (timeLimit < 1000 ? timeLimit * 1000 : timeLimit) : null,
+        mcqOptions: type === "MCQ" ? {
+          create: options.map((opt: any) => ({
+            text: opt.text,
+            isCorrect: !!opt.isCorrect,
+          })),
+        } : undefined,
+        testCases: isCodeQuestion ? {
+          create: (testCases || []).map((tc: any, index: number) => ({
+            input: tc.input,
+            expectedOutput: tc.expectedOutput,
+            isHidden: !!tc.isHidden,
+            order: tc.order ?? index,
+          })),
+        } : undefined,
+      },
+      include: {
+        mcqOptions: true,
+        testCases: { orderBy: { order: "asc" } },
+      },
+    });
+
+    await prisma.contestQuestion.create({
+      data: {
+        contestId,
+        questionId: question.id,
+        orderIndex: existingCount,
+        points,
+        timeLimit,
+      },
+    });
+
+    res.status(201).json({
+      id: question.id,
+      type: question.type,
+      title: question.title,
+      description: question.description,
+      options: question.mcqOptions,
+      testCases: question.testCases,
+      points,
+      timeLimit,
+    });
+  } catch (error) {
+    console.error("Create contest question error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -237,18 +389,50 @@ router.post("/:contestId/join", authenticateToken, async (req, res) => {
 });
 
 // GET /contest/:contestId/current-question - Get current question during active contest
-router.get("/:contestId/current-question", async (req, res) => {
+router.get("/:contestId/current-question", authenticateToken, async (req, res) => {
   try {
     const { contestId } = req.params;
-    // userId from JWT middleware will be available
-    
-    // Implementation will:
-    // - Verify contest is ACTIVE
-    // - Verify user is a participant
-    // - Find next unanswered question for user
-    // - Return question with options (for MCQ) but not correct answers
-    
-    res.json({});
+    const userId = (req as AuthRequest).user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: "User not authenticated" });
+    }
+
+    const contest = await prisma.contest.findUnique({
+      where: { id: contestId },
+      select: { id: true, startAt: true, endAt: true }
+    });
+
+    if (!contest) {
+      return res.status(404).json({ error: "Contest not found" });
+    }
+
+    const runtimeState = getRuntimeState(contest.startAt, contest.endAt);
+    if (runtimeState !== "ACTIVE") {
+      return res.status(400).json({ error: `Contest is ${runtimeState.toLowerCase()}` });
+    }
+
+    const participant = await prisma.contestParticipant.findUnique({
+      where: {
+        contestId_userId: { contestId, userId }
+      }
+    });
+
+    if (!participant) {
+      return res.status(403).json({ error: "You must join the contest first" });
+    }
+
+    const orchestrator = ContestOrchestrator.getInstance();
+    if (orchestrator) {
+      await orchestrator.ensureContestRunning(contestId);
+    }
+
+    const question = await contestService.getCurrentQuestion(contestId, userId);
+    if (!question) {
+      return res.json({ completed: true, message: "All questions answered" });
+    }
+
+    res.json(question);
   } catch (error) {
     console.error("Get current question error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -256,38 +440,61 @@ router.get("/:contestId/current-question", async (req, res) => {
 });
 
 // POST /contest/:contestId/submit - Submit answer for current question
-router.post("/:contestId/submit", async (req, res) => {
+router.post("/:contestId/submit", authenticateToken, async (req, res) => {
   try {
     const { contestId } = req.params;
     const { questionId, selectedOptionId } = req.body;
-    // userId from JWT middleware will be available
-    
-    // Implementation will:
-    // - Verify contest is ACTIVE
-    // - Verify user is a participant
-    // - Verify question belongs to contest
-    // - Check if user already submitted for this question
-    // - Validate answer and create Submission record
-    // - Return whether answer is correct and points earned
-    
-    res.json({ isCorrect: false, points: 0 });
-  } catch (error) {
+    const userId = (req as AuthRequest).user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: "User not authenticated" });
+    }
+
+    if (!questionId) {
+      return res.status(400).json({ error: "questionId is required" });
+    }
+
+    const result = await submissionService.submitAnswer({
+      userId,
+      contestId,
+      questionId,
+      selectedOptionId: selectedOptionId || null,
+      submittedAt: new Date().toISOString(),
+    });
+
+    const orchestrator = ContestOrchestrator.getInstance();
+    if (orchestrator) {
+      orchestrator.recordSubmission(contestId, userId, questionId);
+    }
+
+    const publicWs = getPublicWs();
+    if (publicWs) {
+      await publicWs.broadcastLeaderboardUpdate(contestId);
+    }
+
+    res.json(result);
+  } catch (error: any) {
     console.error("Submit answer error:", error);
+    if (error?.message?.includes("CONTEST_NOT_ACTIVE")) {
+      return res.status(400).json({ error: error.message });
+    }
+    if (error?.message?.includes("NOT_PARTICIPANT")) {
+      return res.status(403).json({ error: "You must join the contest first" });
+    }
+    if (error?.message?.includes("ALREADY_SUBMITTED")) {
+      return res.status(409).json({ error: "Already submitted for this question" });
+    }
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
-// GET /leaderboard/:contestId - Get full leaderboard
+// GET /leaderboard/:contestId - Get full leaderboard (top 50)
 router.get("/leaderboard/:contestId", async (req, res) => {
   try {
     const { contestId } = req.params;
-    
-    // Implementation will:
-    // - Verify contest is COMPLETED
-    // - Fetch leaderboard snapshots ordered by rank
-    // - Return array of rank, user, and score
-    
-    res.json([]);
+    const topN = await leaderboardService.getTopN(contestId, 50);
+    const totalParticipants = await leaderboardService.getTotalParticipants(contestId);
+    res.json({ leaderboard: topN, totalParticipants });
   } catch (error) {
     console.error("Get leaderboard error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -295,17 +502,21 @@ router.get("/leaderboard/:contestId", async (req, res) => {
 });
 
 // GET /leaderboard/:contestId/me - Get user's leaderboard position
-router.get("/leaderboard/:contestId/me", async (req, res) => {
+router.get("/leaderboard/:contestId/me", authenticateToken, async (req, res) => {
   try {
     const { contestId } = req.params;
-    // userId from JWT middleware will be available
-    
-    // Implementation will:
-    // - Verify contest is COMPLETED
-    // - Fetch user's leaderboard snapshot
-    // - Return user's rank and score
-    
-    res.json({});
+    const userId = (req as AuthRequest).user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: "User not authenticated" });
+    }
+
+    const entry = await leaderboardService.getUserRank(contestId, userId);
+    if (!entry) {
+      return res.status(404).json({ error: "Leaderboard entry not found" });
+    }
+
+    res.json(entry);
   } catch (error) {
     console.error("Get my leaderboard entry error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -489,6 +700,12 @@ router.delete("/:contestId", async (req, res) => {
     });
     
     res.json({ message: "Contest deleted successfully" });
+
+    const publicWs = getPublicWs();
+    if (publicWs) {
+      publicWs.unscheduleContest(contestId);
+      await publicWs.broadcastContestsUpdate();
+    }
   } catch (error) {
     console.error("Delete contest error:", error);
     res.status(500).json({ error: "Internal server error" });

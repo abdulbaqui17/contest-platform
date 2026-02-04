@@ -110,11 +110,12 @@ export class MockContestService implements ContestService {
     return {
       questionId: question.id,
       contestQuestionId: nextQuestion.id,
-      type: question.type as "MCQ" | "DSA" | "SANDBOX",
+      type: question.type as "MCQ" | "CODING" | "DSA" | "SANDBOX",
       title: question.title,
       description: question.description,
       mcqOptions,
       timeLimit: nextQuestion.timeLimit,
+      memoryLimit: question.memoryLimit,
       points: nextQuestion.points,
       questionNumber,
       totalQuestions,
@@ -249,7 +250,7 @@ export class MockSubmissionService implements SubmissionService {
   ): Promise<boolean> {
     const submission = await prisma.submission.findFirst({
       where: {
-        participantId: userId,
+        userId,
         contestId,
         questionId,
       }
@@ -288,7 +289,7 @@ export class MockLeaderboardService implements LeaderboardService {
 
       // Count questions answered
       const questionsAnswered = await prisma.submission.count({
-        where: { participantId: odUserId, contestId }
+        where: { userId: odUserId, contestId }
       });
 
       topN.push({
@@ -319,7 +320,7 @@ export class MockLeaderboardService implements LeaderboardService {
     });
 
     const questionsAnswered = await prisma.submission.count({
-      where: { participantId: userId, contestId }
+      where: { userId, contestId }
     });
 
     return {

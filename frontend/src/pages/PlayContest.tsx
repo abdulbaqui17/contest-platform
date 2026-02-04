@@ -6,6 +6,7 @@ import { Badge } from '../components/ui/badge';
 import { Trophy, Clock, Check, X } from 'lucide-react';
 import UserProfileDropdown from '../components/UserProfileDropdown';
 import { CodingChallenge } from '../components/CodingChallenge';
+import { contestsAPI } from '../services/api';
 
 interface MCQOption {
   id: string;
@@ -66,6 +67,7 @@ const PlayContest: React.FC = () => {
   const [contestEnded, setContestEnded] = useState(false);
   const [alreadyCompleted, setAlreadyCompleted] = useState(false);
   const [finalResult, setFinalResult] = useState<FinalResult | null>(null);
+  const [finalizingResults, setFinalizingResults] = useState(false);
   const [currentRank, setCurrentRank] = useState<number>(0);
   const [currentScore, setCurrentScore] = useState<number>(0);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -335,6 +337,30 @@ const PlayContest: React.FC = () => {
         if (message.data.userFinalRank) {
           setFinalResult(message.data.userFinalRank);
         }
+
+        const userFinalRank = message.data.userFinalRank;
+        const missingRank =
+          !userFinalRank ||
+          ((userFinalRank.rank === 0 || userFinalRank.rank === undefined) &&
+            (userFinalRank.score === 0 || userFinalRank.score === undefined));
+
+        if (missingRank && id) {
+          setFinalizingResults(true);
+          contestsAPI
+            .getMyLeaderboardEntry(id)
+            .then((entry) => {
+              setFinalResult((prev) => ({
+                rank: entry.rank,
+                score: entry.score,
+                questionsAnswered: entry.questionsAnswered,
+                correctAnswers: prev?.correctAnswers,
+              }));
+            })
+            .catch((err) => {
+              console.error('Failed to fetch final rank:', err);
+            })
+            .finally(() => setFinalizingResults(false));
+        }
         break;
 
       case 'contest_start':
@@ -426,8 +452,8 @@ const PlayContest: React.FC = () => {
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
         <Card className="max-w-md w-full">
           <CardContent className="p-8 text-center">
-            <div className="h-16 w-16 rounded-full bg-purple-500/20 flex items-center justify-center mx-auto mb-6">
-              <Trophy className="h-8 w-8 text-purple-400" />
+            <div className="h-16 w-16 rounded-full bg-orange-500/20 flex items-center justify-center mx-auto mb-6">
+              <Trophy className="h-8 w-8 text-orange-400" />
             </div>
             <h2 className="text-2xl font-bold text-zinc-100 mb-2">
               {alreadyCompleted ? 'Contest Already Completed' : 'Contest Ended!'}
@@ -441,7 +467,7 @@ const PlayContest: React.FC = () => {
               <div className="space-y-3 mb-6 p-4 bg-zinc-900 rounded-lg">
                 <div className="flex justify-between items-center">
                   <span className="text-zinc-400">Final Score</span>
-                  <span className="text-2xl font-bold text-purple-400">{finalResult.score}</span>
+                  <span className="text-2xl font-bold text-orange-400">{finalResult.score}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-zinc-400">Final Rank</span>
@@ -457,6 +483,11 @@ const PlayContest: React.FC = () => {
                     <span className="text-lg text-green-400">{finalResult.correctAnswers}</span>
                   </div>
                 )}
+              </div>
+            )}
+            {finalizingResults && !finalResult && (
+              <div className="mb-6 p-4 bg-zinc-900 rounded-lg text-zinc-400 text-sm">
+                Finalizing results...
               </div>
             )}
             <Button onClick={() => navigate('/contests')} variant="primary" size="lg" className="w-full">
@@ -476,14 +507,14 @@ const PlayContest: React.FC = () => {
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
         <Card className="max-w-md w-full">
           <CardContent className="p-8 text-center">
-            <div className="h-16 w-16 rounded-full bg-purple-500/20 flex items-center justify-center mx-auto mb-6">
-              <Clock className="h-8 w-8 text-purple-400 animate-pulse" />
+            <div className="h-16 w-16 rounded-full bg-orange-500/20 flex items-center justify-center mx-auto mb-6">
+              <Clock className="h-8 w-8 text-orange-400 animate-pulse" />
             </div>
             <h2 className="text-2xl font-bold text-zinc-100 mb-2">
               {contestInfo?.title || 'Contest'} Starting Soon
             </h2>
             <p className="text-zinc-400 mb-6">Get ready! The contest will begin in:</p>
-            <div className="text-5xl font-mono font-bold text-purple-400 mb-6">
+            <div className="text-5xl font-mono font-bold text-orange-400 mb-6">
               {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
             </div>
             {contestInfo?.startTime && (
@@ -507,7 +538,7 @@ const PlayContest: React.FC = () => {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-8 w-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+          <div className="h-8 w-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
           <p className="text-zinc-400">
             {connected ? 'Loading contest...' : 'Connecting to server...'}
           </p>
@@ -534,7 +565,7 @@ const PlayContest: React.FC = () => {
               key={idx}
               className={`p-3 rounded-lg text-sm font-medium transition-colors cursor-default ${
                 idx + 1 === currentQuestion.questionNumber
-                  ? 'bg-purple-600 text-white border-2 border-purple-400'
+                  ? 'bg-orange-500 text-black border-2 border-orange-400'
                   : idx + 1 < currentQuestion.questionNumber
                     ? 'bg-zinc-800/50 text-zinc-500 border border-zinc-700/50'
                     : 'bg-zinc-800 text-zinc-400 border border-zinc-700 opacity-50'
@@ -564,7 +595,7 @@ const PlayContest: React.FC = () => {
                   key={entry.userId}
                   className={`p-3 rounded-lg text-sm transition-all ${
                     entry.userId === localStorage.getItem('userId')
-                      ? 'bg-purple-600/30 border border-purple-500'
+                      ? 'bg-orange-500/20 border border-orange-400'
                       : idx === 0
                         ? 'bg-yellow-500/20 border border-yellow-500/50'
                         : idx === 1
@@ -586,14 +617,14 @@ const PlayContest: React.FC = () => {
                       </span>
                       <span className={`truncate max-w-25 ${
                         entry.userId === localStorage.getItem('userId')
-                          ? 'text-purple-300 font-semibold'
+                          ? 'text-orange-300 font-semibold'
                           : 'text-zinc-300'
                       }`}>
                         {entry.userName}
                         {entry.userId === localStorage.getItem('userId') && ' (You)'}
                       </span>
                     </div>
-                    <span className="text-purple-400 font-bold">{entry.score}</span>
+                    <span className="text-orange-400 font-bold">{entry.score}</span>
                   </div>
                 </div>
               ))}
@@ -611,7 +642,7 @@ const PlayContest: React.FC = () => {
           <div className="flex gap-8 items-center">
             <div>
               <span className="text-zinc-500 text-sm">Score</span>
-              <div className="text-2xl font-bold text-purple-400">{currentScore}</div>
+              <div className="text-2xl font-bold text-[var(--color-brand-500)]">{currentScore}</div>
             </div>
             <div>
               <span className="text-zinc-500 text-sm">Rank</span>
@@ -626,7 +657,7 @@ const PlayContest: React.FC = () => {
             }`}>
               <Clock className={`h-5 w-5 ${timeRemaining < 10 ? 'text-red-400' : 'text-zinc-400'}`} />
               <span className={`text-3xl font-bold min-w-15 text-center ${
-                timeRemaining < 10 ? 'text-red-400' : 'text-purple-400'
+                timeRemaining < 10 ? 'text-red-400' : 'text-[var(--color-brand-500)]'
               }`}>
                 {Math.ceil(timeRemaining)}s
               </span>
@@ -637,7 +668,7 @@ const PlayContest: React.FC = () => {
 
         {/* Question Content - MCQ or Coding */}
         <div className={`${currentQuestion.type === 'CODING' ? 'flex-1 min-h-0' : 'p-8 max-w-4xl mx-auto w-full'}`}>
-          {currentQuestion.type === 'CODING' ? (
+          {currentQuestion.type !== 'MCQ' ? (
             /* Coding Challenge View */
             <CodingChallenge
               question={{
@@ -650,13 +681,24 @@ const PlayContest: React.FC = () => {
               contestId={id!}
               onSubmissionComplete={(result) => {
                 console.log('📝 Coding submission complete:', result);
+                const nextScore =
+                  result.currentScore !== undefined
+                    ? result.currentScore
+                    : result.isCorrect
+                      ? currentScore + result.points
+                      : currentScore;
+                const nextRank =
+                  result.currentRank !== undefined ? result.currentRank : currentRank;
+
+                setCurrentScore(nextScore);
+                setCurrentRank(nextRank);
+
                 if (result.isCorrect) {
-                  setCurrentScore(prev => prev + result.points);
                   setSubmissionResult({
                     isCorrect: true,
                     pointsEarned: result.points,
-                    currentScore: currentScore + result.points,
-                    currentRank: currentRank
+                    currentScore: nextScore,
+                    currentRank: nextRank
                   });
                 }
                 // Request next question after successful submission
@@ -711,8 +753,8 @@ const PlayContest: React.FC = () => {
               </p>
               {/* Transition message - shows when next question is coming */}
               {transitionMessage && (
-                <div className="mt-3 pt-3 border-t border-zinc-700 flex items-center gap-2 text-purple-400">
-                  <div className="h-4 w-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+                <div className="mt-3 pt-3 border-t border-zinc-700 flex items-center gap-2 text-[var(--color-brand-500)]">
+                  <div className="h-4 w-4 border-2 border-[var(--color-brand-500)] border-t-transparent rounded-full animate-spin" />
                   <span className="text-sm font-medium">{transitionMessage}</span>
                 </div>
               )}
@@ -741,7 +783,7 @@ const PlayContest: React.FC = () => {
                     disabled={submitting || !!submissionResult}
                     className={`p-4 text-left rounded-xl border-2 transition-all flex items-center gap-4 ${
                       isSelected
-                        ? 'bg-zinc-800 border-purple-500'
+                        ? 'bg-zinc-800 border-orange-500'
                         : 'bg-zinc-900 border-zinc-700 hover:border-zinc-600'
                     } ${
                       (submitting || submissionResult) ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
@@ -749,7 +791,7 @@ const PlayContest: React.FC = () => {
                   >
                     <span className={`w-8 h-8 flex items-center justify-center rounded-full font-semibold text-sm ${
                       isSelected
-                        ? 'bg-purple-500 text-white'
+                        ? 'bg-orange-500 text-black'
                         : 'bg-zinc-800 text-zinc-400'
                     }`}>
                       {String.fromCharCode(65 + index)}

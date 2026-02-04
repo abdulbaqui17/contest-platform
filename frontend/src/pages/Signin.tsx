@@ -95,7 +95,7 @@ const Signin: React.FC = () => {
           </form>
           <div className="mt-6 text-center text-zinc-500">
             Don't have an account?{' '}
-            <Link to="/signup" className="text-purple-400 hover:text-purple-300 transition-colors">
+            <Link to="/signup" className="text-orange-400 hover:text-orange-300 transition-colors">
               Sign Up
             </Link>
           </div>

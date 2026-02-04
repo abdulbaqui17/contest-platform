@@ -10,7 +10,7 @@ const badgeVariants = cva(
         default:
           "border-transparent bg-zinc-800 text-zinc-100",
         active:
-          "border-transparent bg-green-900/20 text-green-400",
+          "border-transparent bg-orange-500/20 text-orange-400",
         past:
           "border-transparent bg-zinc-800/50 text-zinc-500",
         destructive:

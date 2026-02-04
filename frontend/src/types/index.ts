@@ -42,12 +42,22 @@ export interface MCQOption {
 
 export interface QuestionDetail {
   id: string;
-  type: 'MCQ';
+  type: 'MCQ' | 'CODING' | 'DSA' | 'SANDBOX';
   title: string;
   description: string;
-  options: MCQOption[];
-  points: number;
-  timeLimit: number;
+  options?: MCQOption[];
+  testCases?: Array<{
+    id: string;
+    input: string;
+    expectedOutput: string;
+    isHidden: boolean;
+    order: number;
+  }>;
+  points?: number;
+  timeLimit?: number;
+  memoryLimit?: number | null;
+  difficulty?: 'EASY' | 'MEDIUM' | 'HARD';
+  functionName?: string | null;
 }
 
 // WebSocket events for admin monitoring
@@ -68,7 +78,7 @@ export interface QuestionBroadcastEvent {
   data: {
     questionId: string;
     contestQuestionId: string;
-    type: 'MCQ' | 'DSA' | 'SANDBOX';
+    type: 'MCQ' | 'CODING' | 'DSA' | 'SANDBOX';
     title: string;
     description: string;
     mcqOptions?: Array<{
@@ -76,6 +86,7 @@ export interface QuestionBroadcastEvent {
       text: string;
     }>;
     timeLimit: number;
+    memoryLimit?: number | null;
     points: number;
     questionNumber: number;
     totalQuestions: number;
@@ -156,13 +167,24 @@ export interface CreateContestRequest {
 }
 
 export interface CreateQuestionRequest {
-  type: 'MCQ';
+  type: 'MCQ' | 'CODING' | 'DSA' | 'SANDBOX';
   title: string;
   description: string;
-  options: Array<{
+  options?: Array<{
     text: string;
     isCorrect: boolean;
   }>;
-  points: number;
-  timeLimit: number;
+  testCases?: Array<{
+    input: string;
+    expectedOutput: string;
+    isHidden?: boolean;
+    order?: number;
+  }>;
+  points?: number;
+  timeLimit?: number;
+  memoryLimit?: number;
+  difficulty?: 'EASY' | 'MEDIUM' | 'HARD';
+  functionName?: string;
+  starterCode?: Record<string, string>;
+  tags?: string[];
 }

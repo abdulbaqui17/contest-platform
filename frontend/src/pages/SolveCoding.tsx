@@ -38,6 +38,7 @@ interface Question {
 const SolveCoding: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const isAuthenticated = Boolean(localStorage.getItem('token'));
   
   const [question, setQuestion] = useState<Question | null>(null);
   const [testCases, setTestCases] = useState<TestCase[]>([]);
@@ -56,12 +57,8 @@ const SolveCoding: React.FC = () => {
     const fetchData = async () => {
       if (!id) return;
       try {
-        // Fetch question details
-        const questions = await questionsAPI.getAllStandalone();
-        const q = questions.find((q: any) => q.id === id);
-        if (q) {
-          setQuestion(q);
-        }
+        const q = await questionsAPI.getById(id);
+        if (q) setQuestion(q);
         
         // Fetch test cases
         const tcResponse = await questionsAPI.getTestCases(id);
@@ -105,24 +102,34 @@ const SolveCoding: React.FC = () => {
   // Submit for practice (not tied to contest)
   const handleSubmit = async () => {
     if (!id) return;
+    if (!isAuthenticated) {
+      setError('Please sign in to submit your solution.');
+      return;
+    }
     setIsSubmitting(true);
     setError(null);
     setSubmitResult(null);
 
     try {
-      // For practice mode, we'll just run against all test cases
-      const response = await submissionsAPI.runCode(id, code, language);
-      const allPassed = response.results?.every((r: any) => r.passed);
+      const response = await submissionsAPI.submitPractice(code, language, id);
       setSubmitResult({
-        status: allPassed ? 'ACCEPTED' : 'WRONG_ANSWER',
-        isCorrect: allPassed,
-        testCasesPassed: response.passed || 0,
-        totalTestCases: response.total || 0,
-        testCaseResults: response.results || [],
+        status: response.status,
+        isCorrect: response.isAccepted,
+        testCasesPassed: response.testCasesPassed,
+        totalTestCases: response.totalTestCases,
+        results: response.results,
+        runtime: response.runtime,
+        memory: response.memory,
+        compilationError: response.compilationError,
+        runtimeError: response.runtimeError,
       });
       setActiveTab('submissions');
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to submit code');
+      if (err.response?.status === 401) {
+        setError('Please sign in to submit your solution.');
+      } else {
+        setError(err.response?.data?.error || 'Failed to submit code');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -334,6 +341,9 @@ const SolveCoding: React.FC = () => {
                     <div className="text-sm text-zinc-300">
                       Test Cases Passed: {submitResult.testCasesPassed}/{submitResult.totalTestCases}
                     </div>
+                    <div className="text-sm text-zinc-400 mt-1">
+                      Runtime: {submitResult.runtime ?? submitResult.executionTime ?? 0}ms · Memory: {submitResult.memory ?? submitResult.memoryUsed ?? 0}MB
+                    </div>
                   </div>
                 ) : (
                   <p className="text-zinc-400">No submissions yet. Run or submit your code to see results.</p>
@@ -357,6 +367,14 @@ const SolveCoding: React.FC = () => {
 
           {/* Action Bar */}
           <div className="border-t border-zinc-700 bg-zinc-800 p-4">
+            {!isAuthenticated && (
+              <div className="mb-3 p-3 bg-orange-500/10 border border-orange-500/40 rounded-lg text-orange-300 text-sm flex items-center justify-between gap-3">
+                <span>Sign in to submit. You can still run sample tests without an account.</span>
+                <Button variant="secondary" size="sm" onClick={() => navigate('/signin')}>
+                  Sign In
+                </Button>
+              </div>
+            )}
             {error && (
               <div className="mb-3 p-3 bg-red-900/30 border border-red-600 rounded-lg text-red-300 text-sm">
                 {error}
@@ -378,7 +396,7 @@ const SolveCoding: React.FC = () => {
               </button>
               <button
                 onClick={handleSubmit}
-                disabled={isRunning || isSubmitting}
+                disabled={!isAuthenticated || isRunning || isSubmitting}
                 className="px-8 py-2.5 bg-green-600 hover:bg-green-500 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 {isSubmitting ? (

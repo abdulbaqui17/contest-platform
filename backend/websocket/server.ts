@@ -17,6 +17,7 @@ import type {
   TimerService,
 } from "../services/interfaces";
 import { ContestOrchestrator, getRuntimeState } from "../services/contest.orchestrator";
+import { getPublicWs } from "./public";
 
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
 
@@ -75,6 +76,7 @@ export class ContestWebSocketServer {
           email: decoded.email,
           role: decoded.role,
         };
+        ws.userId = decoded.userId;
         ws.isAlive = true;
         this.wss.emit("connection", ws, request);
       });
@@ -410,12 +412,20 @@ export class ContestWebSocketServer {
       where: { contestId, userId }
     });
 
+    const redisEntry = leaderboardEntry
+      ? null
+      : await this.leaderboardService.getUserRank(contestId, userId);
+
     const contest = await prisma.contest.findUnique({
       where: { id: contestId }
     });
 
     const topPlayers = await this.leaderboardService.getTopN(contestId, 10);
     const totalParticipants = await this.leaderboardService.getTotalParticipants(contestId);
+
+    const finalRank = leaderboardEntry?.rank ?? redisEntry?.rank ?? 0;
+    const finalScore = totalScore > 0 ? totalScore : redisEntry?.score ?? 0;
+    const finalQuestionsAnswered = submissions.length;
     
     this.sendToClient(ws, {
       event: "contest_end",
@@ -425,9 +435,10 @@ export class ContestWebSocketServer {
         endTime: contest?.endAt?.toISOString() || new Date().toISOString(),
         finalLeaderboard: topPlayers,
         userFinalRank: {
-          rank: leaderboardEntry?.rank || 0,
-          score: totalScore,
-          questionsAnswered: submissions.length,
+          rank: finalRank,
+          score: finalScore,
+          questionsAnswered: finalQuestionsAnswered,
+          correctAnswers,
         },
         totalParticipants,
       },
@@ -528,6 +539,10 @@ export class ContestWebSocketServer {
       }
 
       setTimeout(() => this.broadcastLeaderboardUpdate(ws.client!.contestId!), 100);
+      const publicWs = getPublicWs();
+      if (publicWs) {
+        void publicWs.broadcastLeaderboardUpdate(ws.client!.contestId!);
+      }
     } catch (error: any) {
       console.error("Error in submit_answer:", error);
       
@@ -632,6 +647,21 @@ export class ContestWebSocketServer {
   }
 
   broadcastToContest(contestId: string, event: ServerEvent) {
+    if (event.event === "contest_end") {
+      const room = this.contestRooms.get(contestId);
+      if (!room) {
+        console.warn(`⚠️ No room found for contest ${contestId} - no clients to broadcast to`);
+        return;
+      }
+
+      room.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN && client.client?.userId) {
+          void this.sendContestCompleted(client, contestId, client.client.userId);
+        }
+      });
+      return;
+    }
+
     const room = this.contestRooms.get(contestId);
     if (!room) {
       console.warn(`⚠️ No room found for contest ${contestId} - no clients to broadcast to`);

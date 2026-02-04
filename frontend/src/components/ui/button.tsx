@@ -8,8 +8,8 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-zinc-100 text-zinc-900 hover:bg-zinc-200",
-        primary: "bg-purple-600 text-white hover:bg-purple-700",
-        secondary: "bg-zinc-800 text-zinc-100 border border-zinc-700 hover:bg-zinc-700",
+        primary: "bg-[var(--color-brand-500)] text-black hover:bg-[var(--color-brand-600)]",
+        secondary: "bg-zinc-900 text-zinc-100 border border-zinc-700 hover:bg-zinc-800",
         success: "bg-green-600 text-white hover:bg-green-700",
         destructive: "bg-red-600 text-white hover:bg-red-700",
         outline: "border border-zinc-700 bg-transparent hover:bg-zinc-800 text-zinc-100",

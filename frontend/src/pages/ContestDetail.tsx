@@ -33,7 +33,7 @@ const ContestDetailPage: React.FC = () => {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-8 w-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+          <div className="h-8 w-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
           <p className="text-zinc-400">Loading contest...</p>
         </div>
       </div>
@@ -129,7 +129,7 @@ const ContestDetailPage: React.FC = () => {
           <CardHeader>
             <div>
               <CardTitle className="flex items-center gap-2">
-                <FileQuestion className="h-5 w-5 text-purple-400" />
+                <FileQuestion className="h-5 w-5 text-orange-400" />
                 Questions
               </CardTitle>
               <CardDescription>{contest.questions.length} questions in this contest</CardDescription>

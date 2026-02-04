@@ -1,23 +1,15 @@
 /**
  * Code Execution Service
- * 
- * Supports two modes:
- * 1. Judge0 CE (Production) - Secure sandboxed execution
- * 2. Local Bun (Development) - Fast execution for JS/TS without Judge0
- * 
- * @see https://github.com/judge0/judge0
+ *
+ * Executes code inside ephemeral Docker containers. Each test case runs in its
+ * own container for isolation.
  */
 
 import { prisma } from "../../db/prismaClient";
 import { spawn } from "child_process";
-
-// Use local execution mode if Judge0 is not available
-const USE_LOCAL_EXECUTION = process.env.USE_LOCAL_EXECUTION === "true" || 
-                            !process.env.JUDGE0_URL;
-
-// ============================================================================
-// TYPES
-// ============================================================================
+import fs from "fs/promises";
+import path from "path";
+import os from "os";
 
 export type SubmissionStatus =
   | "PENDING"
@@ -29,39 +21,14 @@ export type SubmissionStatus =
   | "RUNTIME_ERROR"
   | "COMPILATION_ERROR";
 
-export interface Judge0Submission {
-  source_code: string;
-  language_id: number;
-  stdin?: string;
-  expected_output?: string;
-  cpu_time_limit?: number;     // seconds (e.g., 2.0)
-  memory_limit?: number;       // KB (e.g., 262144 = 256MB)
-  wall_time_limit?: number;    // seconds
-  callback_url?: string;
-}
-
-export interface Judge0Result {
-  token: string;
-  stdout: string | null;
-  stderr: string | null;
-  compile_output: string | null;
-  message: string | null;
-  status: {
-    id: number;
-    description: string;
-  };
-  time: string;          // e.g., "0.012"
-  memory: number;        // KB
-}
-
 export interface TestCaseResult {
   testCaseId: string;
   passed: boolean;
   input: string;
   expectedOutput: string;
   actualOutput: string;
-  executionTime: number;  // ms
-  memoryUsed: number;     // MB
+  executionTime: number; // ms
+  memoryUsed: number; // MB
   error?: string;
   isHidden: boolean;
 }
@@ -77,81 +44,164 @@ export interface ExecutionResult {
   runtimeError?: string;
 }
 
-// ============================================================================
-// LANGUAGE CONFIGURATION
-// ============================================================================
+type ExecutionMode = "function" | "raw";
 
-/**
- * Judge0 Language IDs
- * Full list: https://ce.judge0.com/languages
- */
-export const LANGUAGE_IDS: Record<string, number> = {
-  javascript: 93,   // Node.js 18.15.0
-  typescript: 94,   // TypeScript 5.0.3
-  python: 71,       // Python 3.10.0
-  python3: 71,
-  java: 62,         // Java OpenJDK 17.0.1
-  cpp: 54,          // C++ GCC 9.2.0 (C++17)
-  "c++": 54,
-  c: 50,            // C GCC 9.2.0
-  go: 60,           // Go 1.18.5
-  rust: 73,         // Rust 1.62.0
-  ruby: 72,         // Ruby 3.1.2
+type RunnerConfig = {
+  image: string;
+  sourceFile: string;
+  compile?: string;
+  run: string;
+  env?: Record<string, string>;
+  setup?: (workDir: string) => Promise<void>;
 };
 
-/**
- * Code wrapper templates for each language
- * Wraps user's function with test harness that reads stdin and outputs result
- */
-export const CODE_WRAPPERS: Record<string, (code: string, functionName: string) => string> = {
+type DockerRunResult = {
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+  timedOut: boolean;
+};
+
+const SANDBOX_LIBS_DIR = path.resolve(__dirname, "../sandbox-libs");
+const GSON_JAR = path.join(SANDBOX_LIBS_DIR, "java", "gson-2.10.1.jar");
+const NLOHMANN_HEADER = path.join(SANDBOX_LIBS_DIR, "nlohmann", "json.hpp");
+
+const RUNNER_IMAGES = {
+  javascript: process.env.CODE_RUNNER_IMAGE_JS || "oven/bun:1.1.10",
+  typescript: process.env.CODE_RUNNER_IMAGE_TS || "oven/bun:1.1.10",
+  python: process.env.CODE_RUNNER_IMAGE_PY || "python:3.11-slim",
+  java: process.env.CODE_RUNNER_IMAGE_JAVA || "eclipse-temurin:17-jdk",
+  cpp: process.env.CODE_RUNNER_IMAGE_CPP || "gcc:12",
+  c: process.env.CODE_RUNNER_IMAGE_C || "gcc:12",
+};
+
+const SUPPORTED_LANGUAGES = ["javascript", "typescript", "python", "java", "cpp", "c"];
+const DOCKER_OVERHEAD_MS = Number(process.env.CODE_RUNNER_OVERHEAD_MS || 1500);
+
+const RUNNERS: Record<string, RunnerConfig> = {
+  javascript: {
+    image: RUNNER_IMAGES.javascript,
+    sourceFile: "main.ts",
+    run: "bun /work/main.ts",
+  },
+  typescript: {
+    image: RUNNER_IMAGES.typescript,
+    sourceFile: "main.ts",
+    run: "bun /work/main.ts",
+  },
+  python: {
+    image: RUNNER_IMAGES.python,
+    sourceFile: "main.py",
+    run: "python /work/main.py",
+    env: { PYTHONDONTWRITEBYTECODE: "1" },
+  },
+  python3: {
+    image: RUNNER_IMAGES.python,
+    sourceFile: "main.py",
+    run: "python /work/main.py",
+    env: { PYTHONDONTWRITEBYTECODE: "1" },
+  },
+  java: {
+    image: RUNNER_IMAGES.java,
+    sourceFile: "Main.java",
+    compile: "javac -cp /work/gson.jar -d /work /work/Main.java",
+    run: "java -cp /work:/work/gson.jar Main",
+    setup: async (workDir: string) => {
+      await fs.copyFile(GSON_JAR, path.join(workDir, "gson.jar"));
+    },
+  },
+  cpp: {
+    image: RUNNER_IMAGES.cpp,
+    sourceFile: "main.cpp",
+    compile: "g++ -std=c++17 -O2 -I/work /work/main.cpp -o /work/a.out",
+    run: "/work/a.out",
+    setup: async (workDir: string) => {
+      const targetDir = path.join(workDir, "nlohmann");
+      await fs.mkdir(targetDir, { recursive: true });
+      await fs.copyFile(NLOHMANN_HEADER, path.join(targetDir, "json.hpp"));
+    },
+  },
+  "c++": {
+    image: RUNNER_IMAGES.cpp,
+    sourceFile: "main.cpp",
+    compile: "g++ -std=c++17 -O2 -I/work /work/main.cpp -o /work/a.out",
+    run: "/work/a.out",
+    setup: async (workDir: string) => {
+      const targetDir = path.join(workDir, "nlohmann");
+      await fs.mkdir(targetDir, { recursive: true });
+      await fs.copyFile(NLOHMANN_HEADER, path.join(targetDir, "json.hpp"));
+    },
+  },
+  c: {
+    image: RUNNER_IMAGES.c,
+    sourceFile: "main.c",
+    compile: "gcc -O2 /work/main.c -o /work/a.out",
+    run: "/work/a.out",
+  },
+};
+
+const CODE_WRAPPERS: Record<string, (code: string, functionName: string) => string> = {
   javascript: (code, fn) => `
 ${code}
 
-// Test harness
 const input = require('fs').readFileSync('/dev/stdin', 'utf8').trim();
-const args = JSON.parse(input);
-const result = ${fn}(...args);
+const args = input ? JSON.parse(input) : null;
+let result;
+if (Array.isArray(args)) {
+  result = ${fn}(...args);
+} else if (args && typeof args === 'object') {
+  result = ${fn}(...Object.values(args));
+} else {
+  result = ${fn}(args);
+}
 console.log(JSON.stringify(result));
 `,
-
   typescript: (code, fn) => `
 ${code}
 
-// Test harness
 const input = require('fs').readFileSync('/dev/stdin', 'utf8').trim();
-const args = JSON.parse(input);
-const result = ${fn}(...args);
+const args = input ? JSON.parse(input) : null;
+let result;
+if (Array.isArray(args)) {
+  result = ${fn}(...args);
+} else if (args && typeof args === 'object') {
+  result = ${fn}(...Object.values(args));
+} else {
+  result = ${fn}(args);
+}
 console.log(JSON.stringify(result));
 `,
-
   python: (code, fn) => `
 import sys
 import json
 
 ${code}
 
-# Test harness
 input_data = sys.stdin.read().strip()
-args = json.loads(input_data)
+args = json.loads(input_data) if input_data else None
+if isinstance(args, dict):
+    args = list(args.values())
+elif not isinstance(args, list):
+    args = [args]
 result = ${fn}(*args)
 print(json.dumps(result))
 `,
-
   python3: (code, fn) => `
 import sys
 import json
 
 ${code}
 
-# Test harness
 input_data = sys.stdin.read().strip()
-args = json.loads(input_data)
+args = json.loads(input_data) if input_data else None
+if isinstance(args, dict):
+    args = list(args.values())
+elif not isinstance(args, list):
+    args = [args]
 result = ${fn}(*args)
 print(json.dumps(result))
 `,
-
   java: (code, fn) => `
-import java.util.*;
 import java.io.*;
 import com.google.gson.Gson;
 
@@ -165,19 +215,15 @@ class Main {
         while ((line = br.readLine()) != null) {
             sb.append(line);
         }
-        
+
         Gson gson = new Gson();
         Object[] params = gson.fromJson(sb.toString(), Object[].class);
-        
         Solution solution = new Solution();
-        // Note: This requires reflection or code generation for proper invocation
-        // Simplified version assumes method matches function name
         Object result = solution.${fn}(params);
         System.out.println(gson.toJson(result));
     }
 }
 `,
-
   cpp: (code, fn) => `
 #include <bits/stdc++.h>
 #include <nlohmann/json.hpp>
@@ -189,321 +235,42 @@ ${code}
 int main() {
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
-    
+
     string input;
     getline(cin, input);
-    
-    json args = json::parse(input);
-    // Execute user function (requires template specialization for proper invocation)
+    json args = input.empty() ? json(nullptr) : json::parse(input);
+
     auto result = ${fn}(args);
     cout << json(result).dump() << endl;
-    
+
     return 0;
 }
 `,
-
-  c: (code, fn) => `
+  c: (code, _fn) => `
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 ${code}
 
 int main() {
-    char input[100000];
-    fgets(input, sizeof(input), stdin);
-    
-    // Simple C test harness - limited JSON support
-    // For production, use cJSON library
-    printf("%s\\n", "Result placeholder");
-    
+    // C wrapper is intentionally minimal; parse input manually in solution for now.
     return 0;
 }
 `,
 };
 
-// ============================================================================
-// JUDGE0 SERVICE
-// ============================================================================
-
-export class Judge0Service {
-  private baseUrl: string;
-  private authToken?: string;
-  private callbackUrl?: string;
-
-  constructor() {
-    // Judge0 runs locally in Docker
-    this.baseUrl = process.env.JUDGE0_URL || "http://judge0:2358";
-    this.authToken = process.env.JUDGE0_AUTH_TOKEN;
-    this.callbackUrl = process.env.JUDGE0_CALLBACK_URL;
-  }
-
-  /**
-   * Check if a language is supported
-   */
-  isLanguageSupported(language: string): boolean {
-    return language.toLowerCase() in LANGUAGE_IDS;
-  }
-
-  /**
-   * Get list of supported languages
-   */
-  getSupportedLanguages(): string[] {
-    return ["javascript", "typescript", "python", "java", "cpp", "c", "go", "rust", "ruby"];
-  }
-
-  /**
-   * Get language ID for Judge0
-   */
-  getLanguageId(language: string): number {
-    const id = LANGUAGE_IDS[language.toLowerCase()];
-    if (!id) {
-      throw new Error(`Unsupported language: ${language}`);
-    }
-    return id;
-  }
-
-  /**
-   * Wrap user code with test harness
-   */
-  wrapCode(code: string, language: string, functionName: string): string {
-    const wrapper = CODE_WRAPPERS[language.toLowerCase()];
-    if (!wrapper) {
-      // If no wrapper, return code as-is (user handles I/O)
-      return code;
-    }
-    return wrapper(code, functionName);
-  }
-
-  /**
-   * Submit code to Judge0 for execution
-   */
-  async submitCode(submission: Judge0Submission): Promise<string> {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-
-    if (this.authToken) {
-      headers["X-Auth-Token"] = this.authToken;
-    }
-
-    const response = await fetch(`${this.baseUrl}/submissions?base64_encoded=false&wait=false`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(submission),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Judge0 submission failed: ${error}`);
-    }
-
-    const result = await response.json();
-    return result.token;
-  }
-
-  /**
-   * Submit code and wait for result (synchronous)
-   */
-  async submitAndWait(submission: Judge0Submission, timeoutMs: number = 30000): Promise<Judge0Result> {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-
-    if (this.authToken) {
-      headers["X-Auth-Token"] = this.authToken;
-    }
-
-    // Use wait=true for synchronous execution
-    const response = await fetch(`${this.baseUrl}/submissions?base64_encoded=false&wait=true`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(submission),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Judge0 submission failed: ${error}`);
-    }
-
-    return response.json();
-  }
-
-  /**
-   * Get submission result by token
-   */
-  async getResult(token: string): Promise<Judge0Result> {
-    const headers: Record<string, string> = {};
-
-    if (this.authToken) {
-      headers["X-Auth-Token"] = this.authToken;
-    }
-
-    const response = await fetch(
-      `${this.baseUrl}/submissions/${token}?base64_encoded=false&fields=*`,
-      { headers }
-    );
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Judge0 get result failed: ${error}`);
-    }
-
-    return response.json();
-  }
-
-  /**
-   * Submit multiple test cases as a batch
-   */
-  async submitBatch(submissions: Judge0Submission[]): Promise<string[]> {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-
-    if (this.authToken) {
-      headers["X-Auth-Token"] = this.authToken;
-    }
-
-    const response = await fetch(`${this.baseUrl}/submissions/batch?base64_encoded=false`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ submissions }),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Judge0 batch submission failed: ${error}`);
-    }
-
-    const result = await response.json();
-    return result.map((r: { token: string }) => r.token);
-  }
-
-  /**
-   * Get batch results
-   */
-  async getBatchResults(tokens: string[]): Promise<Judge0Result[]> {
-    const headers: Record<string, string> = {};
-
-    if (this.authToken) {
-      headers["X-Auth-Token"] = this.authToken;
-    }
-
-    const response = await fetch(
-      `${this.baseUrl}/submissions/batch?tokens=${tokens.join(",")}&base64_encoded=false&fields=*`,
-      { headers }
-    );
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Judge0 get batch results failed: ${error}`);
-    }
-
-    const result = await response.json();
-    return result.submissions;
-  }
-
-  /**
-   * Map Judge0 status to our SubmissionStatus
-   */
-  mapStatus(judge0StatusId: number): SubmissionStatus {
-    // Judge0 Status IDs:
-    // 1 - In Queue
-    // 2 - Processing
-    // 3 - Accepted
-    // 4 - Wrong Answer
-    // 5 - Time Limit Exceeded
-    // 6 - Compilation Error
-    // 7 - Runtime Error (SIGSEGV)
-    // 8 - Runtime Error (SIGXFSZ)
-    // 9 - Runtime Error (SIGFPE)
-    // 10 - Runtime Error (SIGABRT)
-    // 11 - Runtime Error (NZEC)
-    // 12 - Runtime Error (Other)
-    // 13 - Internal Error
-    // 14 - Exec Format Error
-
-    switch (judge0StatusId) {
-      case 1:
-      case 2:
-        return "RUNNING";
-      case 3:
-        return "ACCEPTED";
-      case 4:
-        return "WRONG_ANSWER";
-      case 5:
-        return "TIME_LIMIT_EXCEEDED";
-      case 6:
-        return "COMPILATION_ERROR";
-      case 7:
-      case 8:
-      case 9:
-      case 10:
-      case 11:
-      case 12:
-      case 14:
-        return "RUNTIME_ERROR";
-      default:
-        return "RUNTIME_ERROR";
-    }
-  }
-
-  /**
-   * Check if Judge0 is healthy
-   */
-  async healthCheck(): Promise<boolean> {
-    try {
-      const response = await fetch(`${this.baseUrl}/about`, {
-        signal: AbortSignal.timeout(5000),
-      });
-      return response.ok;
-    } catch {
-      return false;
-    }
-  }
-}
-
-// ============================================================================
-// CODE EXECUTION SERVICE (High-Level Interface)
-// ============================================================================
-
 export class CodeExecutionService {
-  private judge0: Judge0Service;
-
-  constructor() {
-    this.judge0 = new Judge0Service();
-  }
-
-  /**
-   * Check if language is supported
-   */
   isLanguageSupported(language: string): boolean {
-    return this.judge0.isLanguageSupported(language);
+    const normalized = this.normalizeLanguage(language);
+    return normalized in RUNNERS;
   }
 
-  /**
-   * Get supported languages
-   */
   getSupportedLanguages(): string[] {
-    return this.judge0.getSupportedLanguages();
+    return SUPPORTED_LANGUAGES;
   }
 
-  /**
-   * Run code against SAMPLE test cases only (visible tests)
-   * Used for "Run" button - fast feedback
-   */
-  async runCode(
-    code: string,
-    language: string,
-    questionId: string
-  ): Promise<ExecutionResult> {
-    // Get only visible (sample) test cases
+  async runCode(code: string, language: string, questionId: string): Promise<ExecutionResult> {
     const testCases = await prisma.testCase.findMany({
-      where: { 
-        questionId,
-        isHidden: false  // Only sample cases for "Run"
-      },
+      where: { questionId, isHidden: false },
       orderBy: { order: "asc" },
     });
 
@@ -519,31 +286,34 @@ export class CodeExecutionService {
       };
     }
 
-    // Get question for function name and limits
     const question = await prisma.question.findUnique({
       where: { id: questionId },
-      select: { functionName: true, timeLimit: true, memoryLimit: true },
+      select: { functionName: true, timeLimit: true, memoryLimit: true, type: true },
     });
 
     const functionName = question?.functionName || "solve";
-    const timeLimit = (question?.timeLimit || 2000) / 1000; // Convert ms to seconds
-    const memoryLimit = (question?.memoryLimit || 256) * 1024; // Convert MB to KB
+    const timeLimit = (question?.timeLimit || 2000) / 1000;
+    const memoryLimit = (question?.memoryLimit || 256) * 1024;
+    const executionMode: ExecutionMode = question?.type === "SANDBOX" ? "raw" : "function";
 
-    return this.executeAgainstTestCases(code, language, testCases, functionName, timeLimit, memoryLimit);
+    return this.executeAgainstTestCases(
+      code,
+      language,
+      testCases,
+      functionName,
+      timeLimit,
+      memoryLimit,
+      executionMode
+    );
   }
 
-  /**
-   * Submit code against ALL test cases (including hidden)
-   * Used for "Submit" button - final verdict
-   */
   async submitCode(
     code: string,
     language: string,
     questionId: string,
-    timeLimit: number = 2,     // seconds
-    memoryLimit: number = 262144 // KB (256MB)
+    timeLimit: number = 2,
+    memoryLimit: number = 262144
   ): Promise<ExecutionResult> {
-    // Get ALL test cases (visible + hidden)
     const testCases = await prisma.testCase.findMany({
       where: { questionId },
       orderBy: { order: "asc" },
@@ -561,29 +331,27 @@ export class CodeExecutionService {
       };
     }
 
-    // Get question for function name
     const question = await prisma.question.findUnique({
       where: { id: questionId },
-      select: { functionName: true, timeLimit: true, memoryLimit: true },
+      select: { functionName: true, timeLimit: true, memoryLimit: true, type: true },
     });
 
     const functionName = question?.functionName || "solve";
     const actualTimeLimit = (question?.timeLimit || 2000) / 1000;
     const actualMemoryLimit = (question?.memoryLimit || 256) * 1024;
+    const executionMode: ExecutionMode = question?.type === "SANDBOX" ? "raw" : "function";
 
     return this.executeAgainstTestCases(
-      code, 
-      language, 
-      testCases, 
-      functionName, 
-      actualTimeLimit, 
-      actualMemoryLimit
+      code,
+      language,
+      testCases,
+      functionName,
+      actualTimeLimit,
+      actualMemoryLimit,
+      executionMode
     );
   }
 
-  /**
-   * Execute code against a list of test cases
-   */
   private async executeAgainstTestCases(
     code: string,
     language: string,
@@ -595,80 +363,119 @@ export class CodeExecutionService {
     }>,
     functionName: string,
     timeLimit: number,
-    memoryLimit: number
+    memoryLimit: number,
+    executionMode: ExecutionMode
   ): Promise<ExecutionResult> {
-    // Use local execution for JS/TS when Judge0 is unavailable
-    if (USE_LOCAL_EXECUTION && (language === "javascript" || language === "typescript")) {
-      console.log("🔧 Using local Bun execution (Judge0 not available)");
-      return this.executeLocalBun(code, language, testCases, functionName, timeLimit);
+    const normalizedLanguage = this.normalizeLanguage(language);
+    const runner = RUNNERS[normalizedLanguage];
+    if (!runner) {
+      return {
+        status: "RUNTIME_ERROR",
+        testCaseResults: [],
+        totalTestCases: testCases.length,
+        testCasesPassed: 0,
+        totalExecutionTime: 0,
+        maxMemoryUsed: 0,
+        compilationError: `Unsupported language: ${language}`,
+      };
     }
 
-    // Use local execution fallback for Python
-    if (USE_LOCAL_EXECUTION && (language === "python" || language === "python3")) {
-      console.log("🐍 Using local Python execution (Judge0 not available)");
-      return this.executeLocalPython(code, testCases, functionName, timeLimit);
-    }
+    const resolvedFunctionName =
+      executionMode === "function"
+        ? this.resolveFunctionName(code, normalizedLanguage, functionName)
+        : "";
 
-    // If Judge0 not available and language not supported locally, use mock
-    if (USE_LOCAL_EXECUTION) {
-      console.log("⚠️ Language not supported locally, using mock execution");
-      return this.mockExecution(code, language, testCases);
-    }
-
-    const languageId = this.judge0.getLanguageId(language);
-    
-    // Wrap code with test harness
-    const wrappedCode = this.judge0.wrapCode(code, language, functionName);
-
-    // Create batch submissions for all test cases
-    const submissions: Judge0Submission[] = testCases.map((tc) => ({
-      source_code: wrappedCode,
-      language_id: languageId,
-      stdin: tc.input,
-      expected_output: tc.expectedOutput,
-      cpu_time_limit: timeLimit,
-      memory_limit: memoryLimit,
-      wall_time_limit: timeLimit * 3,
-    }));
-
+    const workDir = await fs.mkdtemp(path.join(os.tmpdir(), "code-run-"));
     try {
-      // Submit batch to Judge0
-      const tokens = await this.judge0.submitBatch(submissions);
+      const wrappedCode =
+        executionMode === "raw"
+          ? code
+          : this.wrapCode(code, normalizedLanguage, resolvedFunctionName);
 
-      // Poll for results (with exponential backoff)
-      const results = await this.pollForResults(tokens);
+      await fs.writeFile(path.join(workDir, runner.sourceFile), wrappedCode, "utf8");
 
-      // Process results
-      const testCaseResults: TestCaseResult[] = [];
-      let totalExecutionTime = 0;
-      let maxMemoryUsed = 0;
+      if (runner.setup) {
+        await runner.setup(workDir);
+      }
+
       let compilationError: string | undefined;
       let runtimeError: string | undefined;
+      let maxMemoryUsed = 0;
+      let totalExecutionTime = 0;
 
-      for (let i = 0; i < results.length; i++) {
-        const result = results[i];
-        const testCase = testCases[i];
-        
-        const executionTime = parseFloat(result.time || "0") * 1000; // Convert to ms
-        const memoryUsed = (result.memory || 0) / 1024; // Convert KB to MB
+      if (runner.compile) {
+        const compileResult = await this.runDockerCommand({
+          image: runner.image,
+          workDir,
+          command: runner.compile,
+          env: runner.env,
+          timeoutMs: Math.max(5000, timeLimit * 1000 + DOCKER_OVERHEAD_MS * 2),
+          memoryLimitKb: memoryLimit,
+        });
 
+        if (compileResult.timedOut) {
+          compilationError = "Compilation timed out";
+        } else if (compileResult.exitCode !== 0) {
+          compilationError = (compileResult.stderr || compileResult.stdout || "Compilation failed").trim();
+        }
+
+        if (compilationError) {
+          return {
+            status: "COMPILATION_ERROR",
+            testCaseResults: testCases.map((tc) => ({
+              testCaseId: tc.id,
+              passed: false,
+              input: tc.input,
+              expectedOutput: tc.expectedOutput,
+              actualOutput: "",
+              executionTime: 0,
+              memoryUsed: 0,
+              error: compilationError,
+              isHidden: tc.isHidden,
+            })),
+            totalTestCases: testCases.length,
+            testCasesPassed: 0,
+            totalExecutionTime: 0,
+            maxMemoryUsed: 0,
+            compilationError,
+          };
+        }
+      }
+
+      const testCaseResults: TestCaseResult[] = [];
+      let timedOut = false;
+      let runtimeFailure = false;
+
+      for (const testCase of testCases) {
+        const startTime = Date.now();
+        const runResult = await this.runDockerCommand({
+          image: runner.image,
+          workDir,
+          command: runner.run,
+          env: runner.env,
+          stdin: testCase.input,
+          timeoutMs: Math.max(1000, timeLimit * 1000 + DOCKER_OVERHEAD_MS),
+          memoryLimitKb: memoryLimit,
+        });
+        const executionTime = Date.now() - startTime;
         totalExecutionTime += executionTime;
-        maxMemoryUsed = Math.max(maxMemoryUsed, memoryUsed);
 
-        // Check for compilation error (same for all cases)
-        if (result.status.id === 6 && result.compile_output) {
-          compilationError = result.compile_output;
+        if (runResult.timedOut) {
+          timedOut = true;
+          runtimeError = "Time limit exceeded";
         }
 
-        // Check for runtime error
-        if ([7, 8, 9, 10, 11, 12].includes(result.status.id) && result.stderr) {
-          runtimeError = result.stderr;
-        }
-
-        const actualOutput = result.stdout?.trim() || "";
+        const actualOutput = runResult.stdout.trim();
         const expectedOutput = testCase.expectedOutput.trim();
-        const passed = result.status.id === 3 && 
+        const passed =
+          !runResult.timedOut &&
+          runResult.exitCode === 0 &&
           this.normalizeOutput(actualOutput) === this.normalizeOutput(expectedOutput);
+
+        if (!passed && !timedOut && runResult.exitCode !== 0) {
+          runtimeFailure = true;
+          runtimeError = runResult.stderr || runResult.stdout || "Runtime error";
+        }
 
         testCaseResults.push({
           testCaseId: testCase.id,
@@ -677,24 +484,23 @@ export class CodeExecutionService {
           expectedOutput,
           actualOutput,
           executionTime,
-          memoryUsed,
-          error: result.stderr || result.compile_output || undefined,
+          memoryUsed: 0,
+          error: runResult.stderr || undefined,
           isHidden: testCase.isHidden,
         });
       }
 
-      // Determine final status
       const testCasesPassed = testCaseResults.filter((r) => r.passed).length;
       let status: SubmissionStatus;
 
-      if (compilationError) {
-        status = "COMPILATION_ERROR";
+      if (timedOut) {
+        status = "TIME_LIMIT_EXCEEDED";
+      } else if (runtimeFailure) {
+        status = "RUNTIME_ERROR";
       } else if (testCasesPassed === testCases.length) {
         status = "ACCEPTED";
       } else {
-        // Find first failing test case to determine status
-        const firstFail = results.find((r) => r.status.id !== 3);
-        status = firstFail ? this.judge0.mapStatus(firstFail.status.id) : "WRONG_ANSWER";
+        status = "WRONG_ANSWER";
       }
 
       return {
@@ -707,171 +513,131 @@ export class CodeExecutionService {
         compilationError,
         runtimeError,
       };
-    } catch (error) {
-      console.error("Code execution error:", error);
-      
-      // Fallback to local execution if Judge0 is unavailable
-      if (language === "javascript" || language === "typescript") {
-        console.warn("⚠️ Judge0 failed, falling back to local Bun execution");
-        return this.executeLocalBun(code, language, testCases, functionName, timeLimit);
-      }
-
-      // Fallback to mock execution for other languages
-      console.warn("⚠️ Falling back to mock execution");
-      return this.mockExecution(code, language, testCases);
+    } catch (error: any) {
+      const message = error?.message || String(error);
+      return {
+        status: "RUNTIME_ERROR",
+        testCaseResults: testCases.map((tc) => ({
+          testCaseId: tc.id,
+          passed: false,
+          input: tc.input,
+          expectedOutput: tc.expectedOutput,
+          actualOutput: "",
+          executionTime: 0,
+          memoryUsed: 0,
+          error: message,
+          isHidden: tc.isHidden,
+        })),
+        totalTestCases: testCases.length,
+        testCasesPassed: 0,
+        totalExecutionTime: 0,
+        maxMemoryUsed: 0,
+        runtimeError: message,
+      };
+    } finally {
+      await fs.rm(workDir, { recursive: true, force: true });
     }
   }
 
-  /**
-   * Extract function name from code if not specified
-   */
-  private extractFunctionName(code: string, defaultName: string): string {
-    // Try to extract function name from code
-    // Pattern: function <name>( or const/let/var <name> = (
+  private wrapCode(code: string, language: string, functionName: string): string {
+    const wrapper = CODE_WRAPPERS[language.toLowerCase()];
+    if (!wrapper) {
+      return code;
+    }
+    return wrapper(code, functionName);
+  }
+
+  private extractFunctionName(code: string, language: string, defaultName: string): string {
+    const lang = language.toLowerCase();
+
+    if (lang === "python" || lang === "python3") {
+      const match = code.match(/def\s+(\w+)\s*\(/);
+      return match?.[1] || defaultName;
+    }
+
+    if (lang === "java") {
+      const match = code.match(/(?:public|private|protected)?\s+\w+\s+(\w+)\s*\(/);
+      return match?.[1] || defaultName;
+    }
+
+    if (lang === "cpp" || lang === "c++" || lang === "c") {
+      const match = code.match(/\b(\w+)\s*\([^)]*\)\s*\{/);
+      return match?.[1] || defaultName;
+    }
+
     const functionMatch = code.match(/function\s+(\w+)\s*\(/);
     if (functionMatch) {
       return functionMatch[1];
     }
-    
+
     const constMatch = code.match(/(?:const|let|var)\s+(\w+)\s*=\s*(?:\(|function)/);
     if (constMatch) {
       return constMatch[1];
     }
-    
+
     return defaultName;
   }
 
-  /**
-   * Execute JavaScript/TypeScript code locally using Bun
-   */
-  private async executeLocalBun(
-    code: string,
-    language: string,
-    testCases: Array<{ id: string; input: string; expectedOutput: string; isHidden: boolean }>,
-    functionName: string,
-    timeoutSec: number
-  ): Promise<ExecutionResult> {
-    // Extract actual function name from code if default
-    const actualFunctionName = functionName === "solve" 
-      ? this.extractFunctionName(code, functionName)
-      : functionName;
-    
-    console.log(`🔧 Using function name: ${actualFunctionName}`);
-    
-    const testCaseResults: TestCaseResult[] = [];
-    let totalExecutionTime = 0;
-    let maxMemoryUsed = 0;
-    let compilationError: string | undefined;
-    let runtimeError: string | undefined;
+  private resolveFunctionName(code: string, language: string, requestedName?: string | null): string {
+    const fallback = requestedName && requestedName.trim() ? requestedName : "solve";
+    return this.extractFunctionName(code, language, fallback);
+  }
 
-    for (const testCase of testCases) {
-      const startTime = Date.now();
-      
-      try {
-        // Create execution script - handle both array and object inputs
-        const execScript = `
-${code}
+  private normalizeLanguage(language: string): string {
+    return language.toLowerCase();
+  }
 
-// Test harness
-const input = ${testCase.input};
-let result;
-if (Array.isArray(input)) {
-  result = ${actualFunctionName}(...input);
-} else if (typeof input === 'object' && input !== null) {
-  // If input is an object, pass values as arguments
-  result = ${actualFunctionName}(...Object.values(input));
-} else {
-  result = ${actualFunctionName}(input);
-}
-console.log(JSON.stringify(result));
-`;
+  private async runDockerCommand(options: {
+    image: string;
+    workDir: string;
+    command: string;
+    env?: Record<string, string>;
+    stdin?: string;
+    timeoutMs: number;
+    memoryLimitKb: number;
+  }): Promise<DockerRunResult> {
+    const memoryMb = Math.max(64, Math.ceil(options.memoryLimitKb / 1024));
+    const args = [
+      "run",
+      "--rm",
+      "-i",
+      "--network",
+      "none",
+      "--cpus",
+      "1",
+      "--memory",
+      `${memoryMb}m`,
+      "--pids-limit",
+      "64",
+      "--security-opt",
+      "no-new-privileges",
+      "-v",
+      `${options.workDir}:/work`,
+      "-w",
+      "/work",
+    ];
 
-        const result = await this.runBunScript(execScript, timeoutSec * 1000);
-        const executionTime = Date.now() - startTime;
-        totalExecutionTime += executionTime;
-        
-        const actualOutput = result.stdout.trim();
-        const expectedOutput = testCase.expectedOutput.trim();
-        const passed = this.normalizeOutput(actualOutput) === this.normalizeOutput(expectedOutput);
-
-        testCaseResults.push({
-          testCaseId: testCase.id,
-          passed,
-          input: testCase.input,
-          expectedOutput,
-          actualOutput,
-          executionTime,
-          memoryUsed: 10, // Approximate
-          error: result.stderr || undefined,
-          isHidden: testCase.isHidden,
-        });
-
-        if (result.stderr) {
-          runtimeError = result.stderr;
-        }
-      } catch (error: any) {
-        const executionTime = Date.now() - startTime;
-        totalExecutionTime += executionTime;
-
-        // Check if it's a syntax/compilation error
-        const errorMsg = error.message || String(error);
-        if (errorMsg.includes("SyntaxError") || errorMsg.includes("Parse error")) {
-          compilationError = errorMsg;
-        } else {
-          runtimeError = errorMsg;
-        }
-
-        testCaseResults.push({
-          testCaseId: testCase.id,
-          passed: false,
-          input: testCase.input,
-          expectedOutput: testCase.expectedOutput,
-          actualOutput: "",
-          executionTime,
-          memoryUsed: 0,
-          error: errorMsg,
-          isHidden: testCase.isHidden,
-        });
+    if (options.env) {
+      for (const [key, value] of Object.entries(options.env)) {
+        args.push("-e", `${key}=${value}`);
       }
     }
 
-    const testCasesPassed = testCaseResults.filter(r => r.passed).length;
-    
-    let status: SubmissionStatus;
-    if (compilationError) {
-      status = "COMPILATION_ERROR";
-    } else if (testCasesPassed === testCases.length) {
-      status = "ACCEPTED";
-    } else if (runtimeError) {
-      status = "RUNTIME_ERROR";
-    } else {
-      status = "WRONG_ANSWER";
-    }
+    args.push(options.image, "sh", "-lc", options.command);
 
-    return {
-      status,
-      testCaseResults,
-      totalTestCases: testCases.length,
-      testCasesPassed,
-      totalExecutionTime,
-      maxMemoryUsed,
-      compilationError,
-      runtimeError,
-    };
-  }
-
-  /**
-   * Run a script using Bun and return stdout/stderr
-   */
-  private runBunScript(script: string, timeoutMs: number): Promise<{ stdout: string; stderr: string }> {
-    return new Promise((resolve, reject) => {
-      const child = spawn("bun", ["-e", script], {
-        timeout: timeoutMs,
+    return new Promise((resolve) => {
+      const child = spawn("docker", args, {
         stdio: ["pipe", "pipe", "pipe"],
       });
 
       let stdout = "";
       let stderr = "";
+      let timedOut = false;
+
+      const timeout = setTimeout(() => {
+        timedOut = true;
+        child.kill("SIGKILL");
+      }, options.timeoutMs);
 
       child.stdout?.on("data", (data) => {
         stdout += data.toString();
@@ -881,187 +647,23 @@ console.log(JSON.stringify(result));
         stderr += data.toString();
       });
 
+      if (child.stdin && options.stdin !== undefined) {
+        child.stdin.write(options.stdin);
+        child.stdin.end();
+      }
+
       child.on("close", (code) => {
-        if (code === 0) {
-          resolve({ stdout, stderr });
-        } else {
-          reject(new Error(stderr || `Process exited with code ${code}`));
-        }
+        clearTimeout(timeout);
+        resolve({ stdout, stderr, exitCode: code, timedOut });
       });
 
       child.on("error", (err) => {
-        reject(err);
+        clearTimeout(timeout);
+        resolve({ stdout, stderr: err.message, exitCode: 1, timedOut });
       });
     });
   }
 
-  /**
-   * Execute Python code locally
-   */
-  private async executeLocalPython(
-    code: string,
-    testCases: Array<{ id: string; input: string; expectedOutput: string; isHidden: boolean }>,
-    functionName: string,
-    timeoutSec: number
-  ): Promise<ExecutionResult> {
-    const testCaseResults: TestCaseResult[] = [];
-    let totalExecutionTime = 0;
-    let compilationError: string | undefined;
-    let runtimeError: string | undefined;
-
-    for (const testCase of testCases) {
-      const startTime = Date.now();
-      
-      try {
-        // Create execution script
-        const execScript = `
-import json
-${code}
-
-# Test harness
-args = json.loads('${testCase.input.replace(/'/g, "\\'")}')
-result = ${functionName}(*args)
-print(json.dumps(result))
-`;
-
-        const result = await this.runPythonScript(execScript, timeoutSec * 1000);
-        const executionTime = Date.now() - startTime;
-        totalExecutionTime += executionTime;
-        
-        const actualOutput = result.stdout.trim();
-        const expectedOutput = testCase.expectedOutput.trim();
-        const passed = this.normalizeOutput(actualOutput) === this.normalizeOutput(expectedOutput);
-
-        testCaseResults.push({
-          testCaseId: testCase.id,
-          passed,
-          input: testCase.input,
-          expectedOutput,
-          actualOutput,
-          executionTime,
-          memoryUsed: 10,
-          error: result.stderr || undefined,
-          isHidden: testCase.isHidden,
-        });
-
-        if (result.stderr) {
-          runtimeError = result.stderr;
-        }
-      } catch (error: any) {
-        const executionTime = Date.now() - startTime;
-        totalExecutionTime += executionTime;
-
-        const errorMsg = error.message || String(error);
-        if (errorMsg.includes("SyntaxError")) {
-          compilationError = errorMsg;
-        } else {
-          runtimeError = errorMsg;
-        }
-
-        testCaseResults.push({
-          testCaseId: testCase.id,
-          passed: false,
-          input: testCase.input,
-          expectedOutput: testCase.expectedOutput,
-          actualOutput: "",
-          executionTime,
-          memoryUsed: 0,
-          error: errorMsg,
-          isHidden: testCase.isHidden,
-        });
-      }
-    }
-
-    const testCasesPassed = testCaseResults.filter(r => r.passed).length;
-    
-    let status: SubmissionStatus;
-    if (compilationError) {
-      status = "COMPILATION_ERROR";
-    } else if (testCasesPassed === testCases.length) {
-      status = "ACCEPTED";
-    } else if (runtimeError) {
-      status = "RUNTIME_ERROR";
-    } else {
-      status = "WRONG_ANSWER";
-    }
-
-    return {
-      status,
-      testCaseResults,
-      totalTestCases: testCases.length,
-      testCasesPassed,
-      totalExecutionTime,
-      maxMemoryUsed: 10,
-      compilationError,
-      runtimeError,
-    };
-  }
-
-  /**
-   * Run a Python script and return stdout/stderr
-   */
-  private runPythonScript(script: string, timeoutMs: number): Promise<{ stdout: string; stderr: string }> {
-    return new Promise((resolve, reject) => {
-      const child = spawn("python3", ["-c", script], {
-        timeout: timeoutMs,
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-
-      let stdout = "";
-      let stderr = "";
-
-      child.stdout?.on("data", (data) => {
-        stdout += data.toString();
-      });
-
-      child.stderr?.on("data", (data) => {
-        stderr += data.toString();
-      });
-
-      child.on("close", (code) => {
-        if (code === 0) {
-          resolve({ stdout, stderr });
-        } else {
-          reject(new Error(stderr || `Process exited with code ${code}`));
-        }
-      });
-
-      child.on("error", (err) => {
-        reject(err);
-      });
-    });
-  }
-
-  /**
-   * Poll for batch results with exponential backoff
-   */
-  private async pollForResults(tokens: string[], maxAttempts: number = 20): Promise<Judge0Result[]> {
-    let delay = 100; // Start with 100ms
-
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      await new Promise((resolve) => setTimeout(resolve, delay));
-
-      const results = await this.judge0.getBatchResults(tokens);
-      
-      // Check if all submissions are complete
-      const allComplete = results.every(
-        (r) => r.status.id !== 1 && r.status.id !== 2 // Not "In Queue" or "Processing"
-      );
-
-      if (allComplete) {
-        return results;
-      }
-
-      // Exponential backoff with max 2 seconds
-      delay = Math.min(delay * 1.5, 2000);
-    }
-
-    throw new Error("Execution timeout: results not ready after max attempts");
-  }
-
-  /**
-   * Normalize output for comparison (handle whitespace, newlines)
-   */
   private normalizeOutput(output: string): string {
     return output
       .trim()
@@ -1070,45 +672,25 @@ print(json.dumps(result))
       .join("\n");
   }
 
-  /**
-   * Mock execution for development/fallback
-   */
-  private async mockExecution(
-    code: string,
-    language: string,
-    testCases: Array<{ id: string; input: string; expectedOutput: string; isHidden: boolean }>
-  ): Promise<ExecutionResult> {
-    // Simple mock that always passes if code looks reasonable
-    const testCaseResults: TestCaseResult[] = testCases.map((tc) => ({
-      testCaseId: tc.id,
-      passed: code.length > 10, // Very basic check
-      input: tc.input,
-      expectedOutput: tc.expectedOutput,
-      actualOutput: tc.expectedOutput, // Mock: return expected
-      executionTime: Math.random() * 50 + 10,
-      memoryUsed: Math.random() * 20 + 5,
-      isHidden: tc.isHidden,
-    }));
-
-    const passed = testCaseResults.filter((r) => r.passed).length;
-
-    return {
-      status: passed === testCases.length ? "ACCEPTED" : "WRONG_ANSWER",
-      testCaseResults,
-      totalTestCases: testCases.length,
-      testCasesPassed: passed,
-      totalExecutionTime: testCaseResults.reduce((a, b) => a + b.executionTime, 0),
-      maxMemoryUsed: Math.max(...testCaseResults.map((r) => r.memoryUsed)),
-    };
-  }
-
-  /**
-   * Health check
-   */
   async healthCheck(): Promise<boolean> {
-    return this.judge0.healthCheck();
+    return new Promise((resolve) => {
+      const child = spawn("docker", ["info"], { stdio: "ignore" });
+      const timeout = setTimeout(() => {
+        child.kill("SIGKILL");
+        resolve(false);
+      }, 3000);
+
+      child.on("close", (code) => {
+        clearTimeout(timeout);
+        resolve(code === 0);
+      });
+
+      child.on("error", () => {
+        clearTimeout(timeout);
+        resolve(false);
+      });
+    });
   }
 }
 
-// Export singleton instance
 export const codeExecutionService = new CodeExecutionService();

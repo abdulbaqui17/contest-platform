@@ -277,7 +277,7 @@ model Submission {
   testCasesPassed Int? // Number of test cases passed
   totalTestCases  Int? // Total number of test cases
 
-  // Judge0 tracking
+  // Execution tracking
   judge0Token String? // Token for async result retrieval
   
   // Error details
@@ -313,7 +313,7 @@ model PracticeSubmission {
   testCasesPassed Int?
   totalTestCases  Int?
 
-  // Judge0 tracking
+  // Execution tracking
   judge0Token String?
 
   // Error details

@@ -15,7 +15,7 @@ const Landing: React.FC = () => {
   }, [navigate]);
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-purple-600 via-purple-700 to-indigo-800 flex flex-col items-center justify-center p-8">
+    <div className="min-h-screen bg-linear-to-br from-zinc-950 via-slate-900 to-zinc-900 flex flex-col items-center justify-center p-8">
       <div className="text-center max-w-3xl">
         {/* Logo/Icon */}
         <div className="flex justify-center mb-8">
@@ -49,7 +49,7 @@ const Landing: React.FC = () => {
           </div>
           <div className="text-center">
             <div className="h-12 w-12 rounded-lg bg-white/10 flex items-center justify-center mx-auto mb-2">
-              <CircleHelp className="h-6 w-6 text-purple-300" />
+            <CircleHelp className="h-6 w-6 text-orange-300" />
             </div>
             <span className="text-white/80 text-sm">MCQ</span>
           </div>
@@ -72,7 +72,7 @@ const Landing: React.FC = () => {
           <Link to="/signin">
             <Button 
               size="lg" 
-              className="bg-white text-purple-700 hover:bg-white/90 font-semibold px-8 py-6 text-lg rounded-xl shadow-lg"
+              className="bg-[var(--color-brand-500)] text-black hover:bg-[var(--color-brand-600)] font-semibold px-8 py-6 text-lg rounded-xl shadow-lg"
             >
               Sign In
             </Button>
@@ -82,7 +82,7 @@ const Landing: React.FC = () => {
             <Button 
               size="lg" 
               variant="outline"
-              className="border-2 border-white text-white hover:bg-white/10 font-semibold px-8 py-6 text-lg rounded-xl"
+              className="border-2 border-zinc-200 text-zinc-100 hover:bg-white/10 font-semibold px-8 py-6 text-lg rounded-xl"
             >
               Sign Up
             </Button>
@@ -96,7 +96,7 @@ const Landing: React.FC = () => {
             <Link to="/practice/coding">
               <Button 
                 size="sm" 
-                className="bg-green-600/80 hover:bg-green-500 text-white font-medium px-6 rounded-lg"
+                className="bg-emerald-600/80 hover:bg-emerald-500 text-white font-medium px-6 rounded-lg"
               >
                 <Code className="h-4 w-4 mr-2" />
                 Practice Coding
@@ -105,7 +105,7 @@ const Landing: React.FC = () => {
             <Link to="/practice/mcq">
               <Button 
                 size="sm" 
-                className="bg-purple-600/80 hover:bg-purple-500 text-white font-medium px-6 rounded-lg"
+                className="bg-orange-500/80 hover:bg-orange-400 text-black font-medium px-6 rounded-lg"
               >
                 <CircleHelp className="h-4 w-4 mr-2" />
                 Practice MCQ

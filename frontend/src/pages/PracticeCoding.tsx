@@ -28,13 +28,11 @@ const PracticeCoding: React.FC = () => {
     const fetchQuestions = async () => {
       try {
         const allQuestions = await questionsAPI.getAllStandalone();
-        // Filter only coding questions
-        const codingQuestions = allQuestions.filter((q: any) => q.type === 'CODING');
-        // Add difficulty based on description or default
+        // Filter coding/DSA/sandbox questions
+        const codingQuestions = allQuestions.filter((q: any) => ['CODING', 'DSA', 'SANDBOX'].includes(q.type));
         const withDifficulty = codingQuestions.map((q: any) => ({
           ...q,
-          difficulty: q.description?.toLowerCase().includes('easy') ? 'Easy' :
-                     q.description?.toLowerCase().includes('hard') ? 'Hard' : 'Medium'
+          difficulty: q.difficulty === 'EASY' ? 'Easy' : q.difficulty === 'HARD' ? 'Hard' : 'Medium'
         }));
         setQuestions(withDifficulty);
       } catch (error) {

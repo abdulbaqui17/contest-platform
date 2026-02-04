@@ -1,14 +1,8 @@
 import "dotenv/config";
-import express from "express";
 import { createServer } from "http";
-import cors from "cors";
-import authRoutes from "./auth";
-import contestRoutes from "./contests";
-import questionRoutes from "./questions";
-import submissionRoutes from "./submissions";
-import userStatsRoutes from "./users";
-import editorialRoutes from "./editorials";
+import app from "./app";
 import { ContestWebSocketServer } from "./websocket/server";
+import { PublicWebSocketServer } from "./websocket/public";
 import {
   MockContestService,
   MockTimerService,
@@ -19,30 +13,7 @@ import { ContestOrchestrator } from "./services/contest.orchestrator";
 import { redis } from "./redis";
 import { prisma } from "../db/prismaClient";
 
-const app = express();
 const server = createServer(app);
-
-// Enable CORS for all origins in development (configure for production)
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || "*",
-  credentials: true,
-}));
-
-app.use(express.json());
-
-app.use("/auth", authRoutes);
-app.use("/contests", contestRoutes);
-app.use("/contest", contestRoutes);
-app.use("/leaderboard", contestRoutes);
-app.use("/questions", questionRoutes);
-app.use("/submissions", submissionRoutes);
-app.use("/users", userStatsRoutes);
-app.use("/editorials", editorialRoutes);
-
-// Health check endpoint for Docker
-app.get("/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
-});
 
 // Initialize services
 const contestService = new MockContestService();
@@ -58,6 +29,9 @@ const wsServer = new ContestWebSocketServer(
 );
 
 wsServer.initialize();
+
+const publicWsServer = new PublicWebSocketServer();
+publicWsServer.initialize();
 
 // Initialize ContestOrchestrator
 const orchestrator = new ContestOrchestrator(
@@ -79,6 +53,16 @@ const orchestrator = new ContestOrchestrator(
   }
 })();
 
+// Schedule contest status broadcasts for public subscribers
+(async () => {
+  const contests = await prisma.contest.findMany({
+    select: { id: true, startAt: true, endAt: true },
+  });
+  contests.forEach((contest) => {
+    publicWsServer.scheduleContest(contest.id, contest.startAt, contest.endAt);
+  });
+})();
+
 // Handle WebSocket upgrade requests
 server.on("upgrade", (request, socket, head) => {
   const pathname = new URL(request.url || "", `http://${request.headers.host}`)
@@ -86,20 +70,25 @@ server.on("upgrade", (request, socket, head) => {
 
   if (pathname === "/ws/contest") {
     wsServer.handleUpgrade(request, socket, head);
+  } else if (pathname === "/ws/public") {
+    publicWsServer.handleUpgrade(request, socket, head);
   } else {
     socket.destroy();
   }
 });
 
-server.listen(3000, () => {
-  console.log("Server running on port 3000");
-  console.log("WebSocket server available at ws://localhost:3000/ws/contest");
+const port = Number(process.env.PORT || process.env.BACKEND_PORT || 3000);
+
+server.listen(port, () => {
+  console.log(`Server running on port ${port}`);
+  console.log(`WebSocket server available at ws://localhost:${port}/ws/contest`);
 });
 
 // Graceful shutdown
 process.on("SIGTERM", () => {
   console.log("SIGTERM received, closing server...");
   wsServer.close();
+  publicWsServer.close();
   server.close(() => {
     console.log("Server closed");
     process.exit(0);

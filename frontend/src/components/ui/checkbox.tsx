@@ -18,8 +18,8 @@ const Checkbox = React.forwardRef<HTMLInputElement, CheckboxProps>(
       <div
         className={cn(
           "h-5 w-5 rounded border border-zinc-600 bg-zinc-800 flex items-center justify-center cursor-pointer transition-colors",
-          "peer-focus-visible:ring-2 peer-focus-visible:ring-purple-500 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-900",
-          checked && "bg-purple-600 border-purple-600",
+          "peer-focus-visible:ring-2 peer-focus-visible:ring-orange-500 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-900",
+          checked && "bg-orange-500 border-orange-500",
           className
         )}
         onClick={() => {

@@ -27,12 +27,16 @@ interface SubmissionResult {
   status: string;
   isCorrect: boolean;
   points: number;
+  currentScore?: number;
+  currentRank?: number;
   testCasesPassed: number;
   totalTestCases: number;
-  executionTime: number;
-  memoryUsed: number;
+  executionTime?: number;
+  memoryUsed?: number;
+  runtime?: number;
+  memory?: number;
   compilationError?: string;
-  testCaseResults: TestResult[];
+  testCaseResults?: TestResult[];
 }
 
 interface CodingChallengeProps {
@@ -127,8 +131,12 @@ export function CodingChallenge({
         code,
         language
       );
-      setSubmitResult(response);
-      onSubmissionComplete?.(response);
+      const normalizedResponse: SubmissionResult = {
+        ...response,
+        testCaseResults: response.testCaseResults || (response as any).results || [],
+      };
+      setSubmitResult(normalizedResponse);
+      onSubmissionComplete?.(normalizedResponse);
 
       // Refresh submissions list
       const subsResponse = await submissionsAPI.getSubmissions(question.id, contestId);
@@ -359,13 +367,17 @@ export function CodingChallenge({
                       </span>
                     )}
                   </div>
-                  <div className="grid grid-cols-2 gap-4 text-sm text-slate-300">
-                    <div>
-                      Test Cases: {submitResult.testCasesPassed}/{submitResult.totalTestCases}
+                    <div className="grid grid-cols-2 gap-4 text-sm text-slate-300">
+                      <div>
+                        Test Cases: {submitResult.testCasesPassed}/{submitResult.totalTestCases}
+                      </div>
+                      <div>
+                        Runtime: {(submitResult.executionTime ?? submitResult.runtime ?? 0).toFixed(2)}ms
+                      </div>
+                      <div>
+                        Memory: {(submitResult.memoryUsed ?? submitResult.memory ?? 0).toFixed(2)}MB
+                      </div>
                     </div>
-                    <div>Runtime: {submitResult.executionTime.toFixed(2)}ms</div>
-                    <div>Memory: {submitResult.memoryUsed.toFixed(2)}MB</div>
-                  </div>
                   {submitResult.compilationError && (
                     <div className="mt-3 p-2 bg-red-900/30 rounded text-red-300 text-sm">
                       {submitResult.compilationError}
@@ -403,7 +415,7 @@ export function CodingChallenge({
                           {sub.testCasesPassed}/{sub.totalTestCases} passed
                         </div>
                         <div className="text-xs text-slate-400">
-                          {sub.executionTime?.toFixed(2)}ms
+                          {(sub.executionTime ?? sub.runtime ?? 0).toFixed(2)}ms
                         </div>
                       </div>
                     </div>

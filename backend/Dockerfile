@@ -2,6 +2,9 @@
 FROM oven/bun:1 AS base
 WORKDIR /usr/src/app
 
+# Docker CLI for sandboxed code execution (uses host docker socket)
+RUN apt-get update && apt-get install -y docker.io && rm -rf /var/lib/apt/lists/*
+
 # Copy workspace structure (monorepo style)
 # Copy db package first (dependency)
 COPY db/package.json db/

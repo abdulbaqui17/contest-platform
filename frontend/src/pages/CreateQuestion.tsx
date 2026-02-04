@@ -6,9 +6,9 @@ import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import { Label } from '../components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { ArrowLeft, Check, FileCode, FileQuestion, Box } from 'lucide-react';
+import { ArrowLeft, Check, FileCode, FileQuestion, Plus, Trash2 } from 'lucide-react';
 
-type QuestionType = 'MCQ' | 'DSA' | 'Sandbox' | null;
+type QuestionType = 'MCQ' | 'CODING' | 'DSA' | 'SANDBOX' | null;
 
 interface MCQOption {
   label: string;
@@ -21,11 +21,23 @@ const CreateQuestion: React.FC = () => {
   const [selectedType, setSelectedType] = useState<QuestionType>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [difficulty, setDifficulty] = useState<'EASY' | 'MEDIUM' | 'HARD'>('MEDIUM');
+  const [functionName, setFunctionName] = useState('solution');
+  const [timeLimitSec, setTimeLimitSec] = useState(2);
+  const [memoryLimitMb, setMemoryLimitMb] = useState(256);
   const [options, setOptions] = useState<MCQOption[]>([
     { label: 'A', text: '', isCorrect: false },
     { label: 'B', text: '', isCorrect: false },
     { label: 'C', text: '', isCorrect: false },
     { label: 'D', text: '', isCorrect: false },
+  ]);
+  const [testCases, setTestCases] = useState<Array<{
+    input: string;
+    expectedOutput: string;
+    isHidden: boolean;
+  }>>([
+    { input: '[[2,7,11,15],9]', expectedOutput: '[0,1]', isHidden: false },
+    { input: '[[3,2,4],6]', expectedOutput: '[1,2]', isHidden: true },
   ]);
 
   const handleOptionTextChange = (index: number, text: string) => {
@@ -46,15 +58,35 @@ const CreateQuestion: React.FC = () => {
     e.preventDefault();
     
     try {
-      // Save question to database via API
-      const newQuestion = await questionsAPI.createStandalone({
-        type: 'MCQ',
-        title,
-        description,
-        options,
-        points: 10,
-        timeLimit: 120
-      });
+      let newQuestion;
+      if (selectedType === 'MCQ') {
+        newQuestion = await questionsAPI.createStandalone({
+          type: 'MCQ',
+          title,
+          description,
+          options,
+          points: 10,
+          timeLimit: 120
+        });
+      } else if (selectedType === 'CODING' || selectedType === 'DSA' || selectedType === 'SANDBOX') {
+        newQuestion = await questionsAPI.createStandalone({
+          type: selectedType,
+          title,
+          description,
+          difficulty,
+          functionName: selectedType === 'SANDBOX' ? undefined : functionName,
+          timeLimit: timeLimitSec * 1000,
+          memoryLimit: memoryLimitMb,
+          testCases: testCases.map((tc, index) => ({
+            ...tc,
+            order: index,
+          }))
+        });
+      }
+      
+      if (!newQuestion) {
+        throw new Error('Failed to create question');
+      }
       
       // Add to localStorage for CreateContest page
       const existingStr = localStorage.getItem('imported_questions');
@@ -73,6 +105,18 @@ const CreateQuestion: React.FC = () => {
       console.error('Error creating question:', error);
       alert('Failed to create question');
     }
+  };
+
+  const addTestCase = () => {
+    setTestCases((prev) => [...prev, { input: '', expectedOutput: '', isHidden: false }]);
+  };
+
+  const updateTestCase = (index: number, field: 'input' | 'expectedOutput' | 'isHidden', value: string | boolean) => {
+    setTestCases((prev) => prev.map((tc, i) => i === index ? { ...tc, [field]: value } : tc));
+  };
+
+  const removeTestCase = (index: number) => {
+    setTestCases((prev) => prev.filter((_, i) => i !== index));
   };
 
   // Type Selection Screen
@@ -102,10 +146,22 @@ const CreateQuestion: React.FC = () => {
                 size="lg"
                 className="w-full justify-start h-16 text-left"
               >
-                <FileQuestion className="h-5 w-5 mr-3 text-purple-400" />
+                <FileQuestion className="h-5 w-5 mr-3 text-orange-400" />
                 <div>
                   <div className="font-semibold">MCQ</div>
                   <div className="text-sm text-zinc-500">Multiple Choice Question</div>
+                </div>
+              </Button>
+              <Button
+                onClick={() => setSelectedType('CODING')}
+                variant="outline"
+                size="lg"
+                className="w-full justify-start h-16 text-left"
+              >
+                <FileCode className="h-5 w-5 mr-3 text-blue-400" />
+                <div>
+                  <div className="font-semibold">Coding</div>
+                  <div className="text-sm text-zinc-500">LeetCode-style algorithm question</div>
                 </div>
               </Button>
               <Button
@@ -114,22 +170,22 @@ const CreateQuestion: React.FC = () => {
                 size="lg"
                 className="w-full justify-start h-16 text-left"
               >
-                <FileCode className="h-5 w-5 mr-3 text-blue-400" />
+                <FileCode className="h-5 w-5 mr-3 text-green-400" />
                 <div>
                   <div className="font-semibold">DSA</div>
-                  <div className="text-sm text-zinc-500">Data Structures & Algorithms</div>
+                  <div className="text-sm text-zinc-500">Data structures & algorithms (tested)</div>
                 </div>
               </Button>
               <Button
-                onClick={() => setSelectedType('Sandbox')}
+                onClick={() => setSelectedType('SANDBOX')}
                 variant="outline"
                 size="lg"
                 className="w-full justify-start h-16 text-left"
               >
-                <Box className="h-5 w-5 mr-3 text-green-400" />
+                <FileCode className="h-5 w-5 mr-3 text-amber-400" />
                 <div>
                   <div className="font-semibold">Sandbox</div>
-                  <div className="text-sm text-zinc-500">Free-form coding environment</div>
+                  <div className="text-sm text-zinc-500">Generic stdin/stdout program</div>
                 </div>
               </Button>
             </CardContent>
@@ -232,25 +288,167 @@ const CreateQuestion: React.FC = () => {
     );
   }
 
-  // Coming Soon for DSA/Sandbox
-  return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
-      <Card className="max-w-md w-full text-center">
-        <CardHeader>
-          <CardTitle>{selectedType} Question</CardTitle>
-          <CardDescription>
-            {selectedType} question form coming soon...
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button variant="secondary" onClick={() => setSelectedType(null)}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Go Back
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
-  );
+  // CODING/DSA/SANDBOX Form
+  if (selectedType === 'CODING' || selectedType === 'DSA' || selectedType === 'SANDBOX') {
+    return (
+      <div className="min-h-screen bg-zinc-950">
+        <div className="max-w-3xl mx-auto px-6 py-8">
+          <div className="flex items-center justify-between mb-8">
+            <h1 className="text-2xl font-bold text-zinc-100">Create {selectedType} Question</h1>
+            <Button variant="secondary" onClick={() => setSelectedType(null)}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back
+            </Button>
+          </div>
+
+          <Card>
+            <CardContent className="p-6">
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="space-y-2">
+                  <Label htmlFor="title">Title</Label>
+                  <Input
+                    id="title"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    required
+                    placeholder="Enter question title"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="description">Description (Markdown supported)</Label>
+                  <Textarea
+                    id="description"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    required
+                    placeholder="Enter problem statement"
+                    className="min-h-[160px]"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Difficulty</Label>
+                    <select
+                      value={difficulty}
+                      onChange={(e) => setDifficulty(e.target.value as 'EASY' | 'MEDIUM' | 'HARD')}
+                      className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-zinc-100"
+                    >
+                      <option value="EASY">Easy</option>
+                      <option value="MEDIUM">Medium</option>
+                      <option value="HARD">Hard</option>
+                    </select>
+                  </div>
+                  {selectedType !== 'SANDBOX' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="functionName">Function Name</Label>
+                      <Input
+                        id="functionName"
+                        value={functionName}
+                        onChange={(e) => setFunctionName(e.target.value)}
+                        placeholder="solution"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {selectedType === 'SANDBOX' && (
+                  <div className="p-3 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-300 text-sm">
+                    Sandbox questions run as full programs. Read input from stdin and print output to stdout.
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="timeLimit">Time Limit (seconds)</Label>
+                    <Input
+                      id="timeLimit"
+                      type="number"
+                      min={1}
+                      value={timeLimitSec}
+                      onChange={(e) => setTimeLimitSec(parseInt(e.target.value, 10))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="memoryLimit">Memory Limit (MB)</Label>
+                    <Input
+                      id="memoryLimit"
+                      type="number"
+                      min={32}
+                      value={memoryLimitMb}
+                      onChange={(e) => setMemoryLimitMb(parseInt(e.target.value, 10))}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label>Test Cases</Label>
+                    <Button type="button" variant="secondary" size="sm" onClick={addTestCase}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Test
+                    </Button>
+                  </div>
+                  <div className="space-y-3">
+                    {testCases.map((tc, index) => (
+                      <div key={index} className="p-4 rounded-lg border border-zinc-700 bg-zinc-900 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-zinc-400">Test {index + 1}</span>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => removeTestCase(index)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>{selectedType === 'SANDBOX' ? 'Input (stdin)' : 'Input (JSON)'}</Label>
+                          <Input
+                            value={tc.input}
+                            onChange={(e) => updateTestCase(index, 'input', e.target.value)}
+                            placeholder={
+                              selectedType === 'SANDBOX'
+                                ? 'Raw stdin input'
+                                : '[ [2,7,11,15], 9 ] or {"nums":[...],"target":9}'
+                            }
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>{selectedType === 'SANDBOX' ? 'Expected Output' : 'Expected Output (JSON)'}</Label>
+                          <Input
+                            value={tc.expectedOutput}
+                            onChange={(e) => updateTestCase(index, 'expectedOutput', e.target.value)}
+                            placeholder='[0,1]'
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={tc.isHidden}
+                            onChange={(e) => updateTestCase(index, 'isHidden', e.target.checked)}
+                          />
+                          <span className="text-sm text-zinc-400">Hidden test (for grading only)</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <Button type="submit" variant="success" size="lg" className="w-full">
+                  Create {selectedType} Question
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 };
 
 export default CreateQuestion;

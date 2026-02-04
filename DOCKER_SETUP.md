@@ -14,8 +14,9 @@ docker compose up --build
 
 3. Access the platform:
 - Frontend: http://localhost (or http://localhost:80)
-- Backend API: http://localhost:3000
-- WebSocket: ws://localhost:3000/ws/contest
+- Backend API: http://localhost:3001
+- WebSocket: ws://localhost:3001/ws/contest
+- Public WebSocket: ws://localhost:3001/ws/public
 
 ## Default Credentials
 
@@ -31,10 +32,21 @@ Test user (created by seed script):
 - **redis**: Redis 7
 - **db-migrate**: Prisma migrations (runs once)
 
+## Code Execution (Docker Runner)
+
+All code runs inside **ephemeral Docker containers** created by the backend.
+When running the backend in Docker, we mount the host Docker socket:
+
+```
+/var/run/docker.sock:/var/run/docker.sock
+```
+
+This allows the backend container to spawn short‑lived runner containers.
+
 ## Ports
 
 - Frontend: 80
-- Backend: 3000
+- Backend: 3001
 - PostgreSQL: 5432
 - Redis: 6379
 

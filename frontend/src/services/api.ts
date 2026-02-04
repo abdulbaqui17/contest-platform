@@ -10,7 +10,7 @@ import {
 } from '../types';
 
 // Use environment variable for API base URL (configured at build time)
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -74,6 +74,17 @@ export const contestsAPI = {
     const response = await api.get(`/contest/${contestId}/leaderboard`);
     return response.data;
   },
+
+  getMyLeaderboardEntry: async (contestId: string): Promise<{
+    rank: number;
+    userId: string;
+    userName: string;
+    score: number;
+    questionsAnswered: number;
+  }> => {
+    const response = await api.get(`/contest/leaderboard/${contestId}/me`);
+    return response.data;
+  },
 };
 
 // Questions API
@@ -85,6 +96,11 @@ export const questionsAPI = {
 
   create: async (contestId: string, data: CreateQuestionRequest): Promise<QuestionDetail> => {
     const response = await api.post(`/contests/${contestId}/questions`, data);
+    return response.data;
+  },
+
+  getById: async (questionId: string): Promise<any> => {
+    const response = await api.get(`/questions/${questionId}`);
     return response.data;
   },
 
@@ -130,12 +146,16 @@ export const submissionsAPI = {
     status: string;
     isCorrect: boolean;
     points: number;
+    currentScore?: number;
+    currentRank?: number;
     testCasesPassed: number;
     totalTestCases: number;
-    executionTime: number;
-    memoryUsed: number;
+    executionTime?: number;
+    memoryUsed?: number;
+    runtime?: number;
+    memory?: number;
     compilationError?: string;
-    testCaseResults: Array<{
+    testCaseResults?: Array<{
       testCaseId: string;
       passed: boolean;
       input: string;
@@ -145,6 +165,15 @@ export const submissionsAPI = {
       memoryUsed: number;
       error?: string;
       isHidden: boolean;
+    }>;
+    results?: Array<{
+      testCase: number;
+      input: string;
+      expected: string;
+      actual: string;
+      passed: boolean;
+      time: number;
+      memory: number;
     }>;
   }> => {
     const response = await api.post('/submissions/code', {
@@ -200,7 +229,7 @@ export const submissionsAPI = {
   },
 
   // Get supported languages
-  getSupportedLanguages: async (): Promise<{ id: string; name: string; judge0Id: number }[]> => {
+  getSupportedLanguages: async (): Promise<{ id: string; name: string }[]> => {
     const response = await api.get('/submissions/languages');
     return response.data;
   },
@@ -254,8 +283,10 @@ export const submissionsAPI = {
     points: number;
     testCasesPassed: number;
     totalTestCases: number;
-    runtime: number;
-    memory: number;
+    runtime?: number;
+    memory?: number;
+    executionTime?: number;
+    memoryUsed?: number;
     compilationError?: string;
     results: Array<{
       testCase: number;

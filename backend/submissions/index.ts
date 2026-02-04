@@ -4,7 +4,7 @@
  * Endpoints:
  * - POST /run        → Run code against SAMPLE test cases (fast feedback)
  * - POST /submit     → Submit code against ALL test cases (final verdict)
- * - POST /callback   → Judge0 webhook callback
+ * - POST /health/check → Docker runner health check
  * - GET  /:id        → Get submission details
  * - GET  /history    → Get user's submission history
  */
@@ -20,9 +20,13 @@ import {
   type SubmissionStatus,
 } from "../services/code-execution.service";
 import { getWss } from "../websocket/server";
-import { LANGUAGE_IDS } from "../services/code-execution.service";
+import { RedisLeaderboardService } from "../services/leaderboard.service";
+import { redis } from "../redis";
+import { ContestOrchestrator } from "../services/contest.orchestrator";
+import { getPublicWs } from "../websocket/public";
 
 const router = Router();
+const leaderboardService = new RedisLeaderboardService(redis);
 
 // ============================================================================
 // PUBLIC ENDPOINTS
@@ -33,14 +37,11 @@ const router = Router();
  * GET /submissions/languages
  */
 router.get("/languages", async (_req: Request, res: Response) => {
-  const languages = Object.entries(LANGUAGE_IDS)
-    .filter(([key]) => !["python3", "c++"].includes(key)) // Filter aliases
-    .map(([name, id]) => ({
-      id: name,
-      name: name.charAt(0).toUpperCase() + name.slice(1),
-      judge0Id: id,
-    }));
-  
+  const languages = codeExecutionService.getSupportedLanguages().map((name) => ({
+    id: name,
+    name: name.charAt(0).toUpperCase() + name.slice(1),
+  }));
+
   res.json(languages);
 });
 
@@ -67,7 +68,8 @@ function sendSubmissionUpdate(userId: string, data: any) {
     if (wss) {
       // Find client connection and send update
       wss.clients.forEach((client: any) => {
-        if (client.userId === userId && client.readyState === 1) {
+        const clientUserId = client.userId || client.client?.userId;
+        if (clientUserId === userId && client.readyState === 1) {
           client.send(JSON.stringify({
             type: "SUBMISSION_UPDATE",
             ...data,
@@ -229,7 +231,7 @@ router.post("/run", optionalAuth, async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Question not found" });
     }
 
-    if (question.type !== "CODING") {
+    if (!["CODING", "DSA", "SANDBOX"].includes(question.type)) {
       return res.status(400).json({ error: "This endpoint is only for coding questions" });
     }
 
@@ -313,7 +315,7 @@ router.post("/practice", authenticateToken, async (req: Request, res: Response) 
       return res.status(404).json({ error: "Question not found" });
     }
 
-    if (question.type !== "CODING") {
+    if (!["CODING", "DSA", "SANDBOX"].includes(question.type)) {
       return res.status(400).json({ error: "This endpoint is only for coding questions" });
     }
 
@@ -410,9 +412,12 @@ router.post("/practice", authenticateToken, async (req: Request, res: Response) 
       totalTestCases: result.totalTestCases,
       runtime: Math.round(result.totalExecutionTime),
       memory: Math.round(result.maxMemoryUsed * 10) / 10,
+      executionTime: Math.round(result.totalExecutionTime),
+      memoryUsed: Math.round(result.maxMemoryUsed * 10) / 10,
       compilationError: result.compilationError,
       runtimeError: result.runtimeError,
       results: visibleResults,
+      testCaseResults: visibleResults,
       // Hidden test summary
       hiddenTestsPassed: result.testCaseResults.filter((tc) => tc.isHidden && tc.passed).length,
       hiddenTestsTotal: result.testCaseResults.filter((tc) => tc.isHidden).length,
@@ -483,7 +488,7 @@ router.post("/contest", authenticateToken, async (req: Request, res: Response) =
     }
 
     // Verify it's a coding question
-    if (contestQuestion.question.type !== "CODING") {
+    if (!["CODING", "DSA", "SANDBOX"].includes(contestQuestion.question.type)) {
       return res.status(400).json({ error: "This endpoint is only for coding questions" });
     }
 
@@ -505,6 +510,11 @@ router.post("/contest", authenticateToken, async (req: Request, res: Response) =
       },
     });
 
+    const alreadyAccepted = !!(
+      existingSubmission &&
+      (existingSubmission.status === "ACCEPTED" || existingSubmission.isCorrect)
+    );
+
     let submission;
     if (existingSubmission) {
       // Update existing
@@ -513,7 +523,7 @@ router.post("/contest", authenticateToken, async (req: Request, res: Response) =
         data: {
           code,
           language,
-          status: "PENDING",
+          status: alreadyAccepted ? "ACCEPTED" : "PENDING",
           submittedAt: new Date(),
         },
       });
@@ -534,11 +544,13 @@ router.post("/contest", authenticateToken, async (req: Request, res: Response) =
 
     console.log(`📝 Contest submission ${submission.id} for contest ${contestId}`);
 
-    // Update status to RUNNING
-    await prisma.submission.update({
-      where: { id: submission.id },
-      data: { status: "RUNNING" },
-    });
+    // Update status to RUNNING (unless already accepted)
+    if (!alreadyAccepted) {
+      await prisma.submission.update({
+        where: { id: submission.id },
+        data: { status: "RUNNING" },
+      });
+    }
 
     // Execute against ALL test cases
     const result = await codeExecutionService.submitCode(
@@ -547,26 +559,106 @@ router.post("/contest", authenticateToken, async (req: Request, res: Response) =
       questionId
     );
 
-    // Calculate points
-    const isCorrect = result.status === "ACCEPTED";
-    const points = isCorrect ? contestQuestion.points : 0;
+    const isAccepted = result.status === "ACCEPTED";
+    const finalAccepted = alreadyAccepted || isAccepted;
+    const finalStatus: SubmissionStatus = finalAccepted ? "ACCEPTED" : result.status;
+    const finalIsCorrect = finalAccepted;
+    const points = finalAccepted ? contestQuestion.points : 0;
+
+    const shouldUpdateMetrics = !alreadyAccepted || isAccepted;
+    const updateData: Record<string, any> = {
+      status: finalStatus,
+      isCorrect: finalIsCorrect,
+    };
+
+    if (shouldUpdateMetrics) {
+      updateData.executionTime = Math.round(result.totalExecutionTime);
+      updateData.memoryUsed = Math.round(result.maxMemoryUsed);
+      updateData.testCasesPassed = result.testCasesPassed;
+      updateData.totalTestCases = result.totalTestCases;
+      updateData.compileOutput = result.compilationError;
+      updateData.stderr = result.runtimeError;
+    }
 
     // Update submission with results
     await prisma.submission.update({
       where: { id: submission.id },
-      data: {
-        status: result.status,
-        isCorrect,
-        executionTime: Math.round(result.totalExecutionTime),
-        memoryUsed: Math.round(result.maxMemoryUsed),
-        testCasesPassed: result.testCasesPassed,
-        totalTestCases: result.totalTestCases,
-        compileOutput: result.compilationError,
-        stderr: result.runtimeError,
+      data: updateData,
+    });
+
+    // Recompute current score (sum of correct submissions)
+    const correctSubmissions = await prisma.submission.findMany({
+      where: {
+        userId,
+        contestId,
+        isCorrect: true,
+      },
+      include: {
+        question: {
+          include: {
+            contests: {
+              where: { contestId },
+            },
+          },
+        },
       },
     });
 
-    console.log(`✅ Contest submission ${submission.id}: ${result.status} (${points} points)`);
+    const currentScore = correctSubmissions.reduce((sum, sub) => {
+      const cq = sub.question.contests[0];
+      return sum + (cq ? cq.points : 0);
+    }, 0);
+
+    await leaderboardService.updateScore(contestId, userId, currentScore);
+    const userRank = await leaderboardService.getUserRank(contestId, userId);
+    const currentRank = userRank ? userRank.rank : 0;
+
+    console.log(`✅ Contest submission ${submission.id}: ${finalStatus} (${points} points)`);
+
+    // Record submission with orchestrator for early advancement
+    const orchestrator = ContestOrchestrator.getInstance();
+    if (orchestrator) {
+      orchestrator.recordSubmission(contestId, userId, questionId);
+    }
+
+    // Broadcast leaderboard update to contest clients
+    try {
+      const wss = getWss();
+      if (wss) {
+        const topN = await leaderboardService.getTopN(contestId, 20);
+        const totalParticipants = await leaderboardService.getTotalParticipants(contestId);
+
+        for (const client of wss.clients) {
+          const extClient: any = client as any;
+          const clientContestId = extClient.client?.contestId;
+          const clientUserId = extClient.userId || extClient.client?.userId;
+
+          if (clientContestId !== contestId || !clientUserId) continue;
+          if (client.readyState !== 1) continue;
+
+          const userEntry = await leaderboardService.getUserRank(contestId, clientUserId);
+          client.send(
+            JSON.stringify({
+              event: "leaderboard_update",
+              data: {
+                contestId,
+                topN,
+                userEntry,
+                totalParticipants,
+              },
+              timestamp: new Date().toISOString(),
+            })
+          );
+        }
+      }
+    } catch (err) {
+      console.error("Failed to broadcast leaderboard update:", err);
+    }
+
+    const publicWs = getPublicWs();
+    if (publicWs) {
+      await publicWs.broadcastLeaderboardUpdate(contestId);
+    }
 
     // Prepare response
     const visibleResults = result.testCaseResults
@@ -583,15 +675,20 @@ router.post("/contest", authenticateToken, async (req: Request, res: Response) =
 
     res.json({
       submissionId: submission.id,
-      status: result.status,
-      isCorrect,
+      status: finalStatus,
+      isCorrect: finalIsCorrect,
       points,
       testCasesPassed: result.testCasesPassed,
       totalTestCases: result.totalTestCases,
       runtime: Math.round(result.totalExecutionTime),
       memory: Math.round(result.maxMemoryUsed * 10) / 10,
+      executionTime: Math.round(result.totalExecutionTime),
+      memoryUsed: Math.round(result.maxMemoryUsed * 10) / 10,
       compilationError: result.compilationError,
+      currentScore,
+      currentRank,
       results: visibleResults,
+      testCaseResults: visibleResults,
     });
   } catch (error) {
     console.error("Contest submission error:", error);
@@ -628,6 +725,55 @@ router.post("/code", authenticateToken, async (req: Request, res: Response) => {
     );
   }
 });
+
+// ============================================================================
+// GET CONTEST SUBMISSIONS FOR QUESTION
+// ============================================================================
+
+/**
+ * Get user's contest submissions for a specific question
+ *
+ * GET /submissions/question/:questionId/contest/:contestId
+ */
+router.get(
+  "/question/:questionId/contest/:contestId",
+  authenticateToken,
+  async (req: Request, res: Response) => {
+    try {
+      const { questionId, contestId } = req.params;
+      const userId = (req as AuthRequest).user?.userId;
+
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const submissions = await prisma.submission.findMany({
+        where: {
+          userId,
+          contestId,
+          questionId,
+        },
+        orderBy: { submittedAt: "desc" },
+      });
+
+      res.json(
+        submissions.map((s) => ({
+          id: s.id,
+          status: s.status,
+          language: s.language,
+          testCasesPassed: s.testCasesPassed,
+          totalTestCases: s.totalTestCases,
+          executionTime: s.executionTime,
+          memoryUsed: s.memoryUsed,
+          createdAt: s.submittedAt,
+        }))
+      );
+    } catch (error) {
+      console.error("Get contest submissions error:", error);
+      res.status(500).json({ error: "Failed to get submissions" });
+    }
+  }
+);
 
 // ============================================================================
 // GET SUBMISSION DETAILS
@@ -823,98 +969,6 @@ router.get("/", authenticateToken, async (req: Request, res: Response) => {
 });
 
 // ============================================================================
-// JUDGE0 CALLBACK (for async submissions)
-// ============================================================================
-
-/**
- * Webhook callback from Judge0
- * 
- * PUT /submissions/callback
- */
-router.put("/callback", async (req: Request, res: Response) => {
-  try {
-    const { token, status, stdout, stderr, compile_output, time, memory } = req.body;
-
-    console.log(`📩 Judge0 callback for token: ${token}`);
-
-    // Find submission by judge0 token
-    let submission = await prisma.practiceSubmission.findFirst({
-      where: { judge0Token: token },
-    });
-
-    if (submission) {
-      // Update practice submission
-      await prisma.practiceSubmission.update({
-        where: { id: submission.id },
-        data: {
-          status: mapJudge0Status(status.id),
-          executionTime: parseFloat(time || "0") * 1000,
-          memoryUsed: (memory || 0) / 1024,
-          compileOutput: compile_output,
-          stderr,
-        },
-      });
-
-      // Notify via WebSocket
-      sendSubmissionUpdate(submission.userId, {
-        submissionId: submission.id,
-        status: mapJudge0Status(status.id),
-      });
-    } else {
-      // Try contest submission
-      const contestSubmission = await prisma.submission.findFirst({
-        where: { judge0Token: token },
-      });
-
-      if (contestSubmission) {
-        await prisma.submission.update({
-          where: { id: contestSubmission.id },
-          data: {
-            status: mapJudge0Status(status.id),
-            isCorrect: status.id === 3,
-            executionTime: parseFloat(time || "0") * 1000,
-            memoryUsed: (memory || 0) / 1024,
-            compileOutput: compile_output,
-            stderr,
-          },
-        });
-
-        sendSubmissionUpdate(contestSubmission.userId, {
-          submissionId: contestSubmission.id,
-          status: mapJudge0Status(status.id),
-        });
-      }
-    }
-
-    res.json({ received: true });
-  } catch (error) {
-    console.error("Callback error:", error);
-    res.status(500).json({ error: "Callback processing failed" });
-  }
-});
-
-/**
- * Map Judge0 status ID to our status
- */
-function mapJudge0Status(statusId: number): SubmissionStatus {
-  switch (statusId) {
-    case 1:
-    case 2:
-      return "RUNNING";
-    case 3:
-      return "ACCEPTED";
-    case 4:
-      return "WRONG_ANSWER";
-    case 5:
-      return "TIME_LIMIT_EXCEEDED";
-    case 6:
-      return "COMPILATION_ERROR";
-    default:
-      return "RUNTIME_ERROR";
-  }
-}
-
-// ============================================================================
 // HEALTH CHECK
 // ============================================================================
 
@@ -928,7 +982,7 @@ router.get("/health/check", async (req: Request, res: Response) => {
     const healthy = await codeExecutionService.healthCheck();
     res.json({
       status: healthy ? "healthy" : "unhealthy",
-      judge0: healthy,
+      docker: healthy,
       languages: codeExecutionService.getSupportedLanguages(),
     });
   } catch (error) {

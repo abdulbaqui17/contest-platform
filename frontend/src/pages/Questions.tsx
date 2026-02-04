@@ -16,7 +16,10 @@ const Questions: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState<CreateQuestionRequest>({
+  type MCQFormData = CreateQuestionRequest & {
+    options: Array<{ text: string; isCorrect: boolean }>;
+  };
+  const [formData, setFormData] = useState<MCQFormData>({
     type: 'MCQ',
     title: '',
     description: '',
@@ -79,7 +82,7 @@ const Questions: React.FC = () => {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-8 w-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+          <div className="h-8 w-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
           <p className="text-zinc-400">Loading questions...</p>
         </div>
       </div>
@@ -262,7 +265,7 @@ const Questions: React.FC = () => {
                   </div>
                   <p className="text-zinc-400 mb-4">{question.description}</p>
                   <div className="space-y-2">
-                    {question.options.map((option, optIndex) => (
+                    {(question.options ?? []).map((option, optIndex) => (
                       <div
                         key={optIndex}
                         className={`p-3 rounded-lg border ${
