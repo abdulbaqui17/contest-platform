@@ -20,7 +20,7 @@ export interface QuestionBroadcastEvent {
   data: {
     questionId: string;
     contestQuestionId: string;
-    type: "MCQ" | "DSA" | "SANDBOX";
+    type: "MCQ" | "CODING" | "DSA" | "SANDBOX";
     title: string;
     description: string;
     mcqOptions?: Array<{
@@ -28,6 +28,7 @@ export interface QuestionBroadcastEvent {
       text: string;
     }>;
     timeLimit: number;
+    memoryLimit?: number | null;
     points: number;
     questionNumber: number;
     totalQuestions: number;
@@ -116,6 +117,7 @@ export interface ContestEndEvent {
       rank: number;
       score: number;
       questionsAnswered: number;
+      correctAnswers: number;
     };
     totalParticipants: number;
   };
