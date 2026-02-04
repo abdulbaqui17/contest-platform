@@ -136,12 +136,10 @@ router.post("/code", async (req: Request, res: Response) => {
     });
 
     // Execute code against test cases
-    const result = await codeExecutionService.executeCode(
+    const result = await codeExecutionService.runCode(
       code,
       language,
-      questionId,
-      timeLimit,
-      memoryLimit
+      questionId
     );
 
     // Update submission with results
@@ -376,12 +374,10 @@ router.post("/run", async (req: Request, res: Response) => {
 
     console.log(`🔧 Running code against ${question.testCases.length} sample test cases`);
 
-    const result = await codeExecutionService.executeCode(
+    const result = await codeExecutionService.runCode(
       code,
       language,
-      questionId,
-      timeLimit,
-      memoryLimit
+      questionId
     );
 
     // Filter to only visible test cases
