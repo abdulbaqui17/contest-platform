@@ -90,6 +90,11 @@ Each container runs with:
 - If backend runs on host: Docker CLI must be installed.
 - If backend runs in Docker: mount host socket:
   - `/var/run/docker.sock:/var/run/docker.sock`
+  - bind-mount a shared temp dir for code files:
+    - `./runner-tmp:/runner-tmp`
+  - set environment:
+    - `CODE_RUNNER_CONTAINER_DIR=/runner-tmp`
+    - `CODE_RUNNER_HOST_DIR=/absolute/path/to/runner-tmp`
 
 ## Verdict Types
 

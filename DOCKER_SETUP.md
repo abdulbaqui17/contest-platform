@@ -12,6 +12,12 @@ cp .env.example .env
 docker compose up --build
 ```
 
+Note: the backend writes code to `./runner-tmp` so it can mount the files into
+per-run Docker containers. Create it once if needed:
+```bash
+mkdir -p runner-tmp
+```
+
 3. Access the platform:
 - Frontend: http://localhost (or http://localhost:80)
 - Backend API: http://localhost:3001

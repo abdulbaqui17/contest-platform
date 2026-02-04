@@ -66,6 +66,9 @@ const SANDBOX_LIBS_DIR = path.resolve(__dirname, "../sandbox-libs");
 const GSON_JAR = path.join(SANDBOX_LIBS_DIR, "java", "gson-2.10.1.jar");
 const NLOHMANN_HEADER = path.join(SANDBOX_LIBS_DIR, "nlohmann", "json.hpp");
 
+const RUNNER_CONTAINER_BASE_DIR = process.env.CODE_RUNNER_CONTAINER_DIR || os.tmpdir();
+const RUNNER_HOST_BASE_DIR = process.env.CODE_RUNNER_HOST_DIR || RUNNER_CONTAINER_BASE_DIR;
+
 const RUNNER_IMAGES = {
   javascript: process.env.CODE_RUNNER_IMAGE_JS || "oven/bun:1.1.10",
   typescript: process.env.CODE_RUNNER_IMAGE_TS || "oven/bun:1.1.10",
@@ -385,7 +388,10 @@ export class CodeExecutionService {
         ? this.resolveFunctionName(code, normalizedLanguage, functionName)
         : "";
 
-    const workDir = await fs.mkdtemp(path.join(os.tmpdir(), "code-run-"));
+    await fs.mkdir(RUNNER_CONTAINER_BASE_DIR, { recursive: true });
+    const workDir = await fs.mkdtemp(path.join(RUNNER_CONTAINER_BASE_DIR, "code-run-"));
+    const workDirRelative = path.relative(RUNNER_CONTAINER_BASE_DIR, workDir);
+    const hostWorkDir = path.join(RUNNER_HOST_BASE_DIR, workDirRelative);
     try {
       const wrappedCode =
         executionMode === "raw"
@@ -406,7 +412,7 @@ export class CodeExecutionService {
       if (runner.compile) {
         const compileResult = await this.runDockerCommand({
           image: runner.image,
-          workDir,
+          workDir: hostWorkDir,
           command: runner.compile,
           env: runner.env,
           timeoutMs: Math.max(5000, timeLimit * 1000 + DOCKER_OVERHEAD_MS * 2),
@@ -450,7 +456,7 @@ export class CodeExecutionService {
         const startTime = Date.now();
         const runResult = await this.runDockerCommand({
           image: runner.image,
-          workDir,
+          workDir: hostWorkDir,
           command: runner.run,
           env: runner.env,
           stdin: testCase.input,

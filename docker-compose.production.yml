@@ -93,11 +93,14 @@ services:
       
       # Auth
       JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      CODE_RUNNER_CONTAINER_DIR: /runner-tmp
+      CODE_RUNNER_HOST_DIR: ${CODE_RUNNER_HOST_DIR:-/var/contest/runner-tmp}
       
     ports:
       - "${BACKEND_PORT:-3001}:3000"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ${CODE_RUNNER_HOST_DIR:-/var/contest/runner-tmp}:/runner-tmp
     networks:
       - contest-network
 
