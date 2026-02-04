@@ -4,7 +4,7 @@ import { SignupRequestSchema, SigninRequestSchema } from "../schemas";
 import { prisma } from "../../db/prismaClient";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { authenticateToken, AuthRequest } from "../middleware/auth";
+import { authenticateToken, type AuthRequest } from "../middleware/auth";
 
 const router = Router();
 
