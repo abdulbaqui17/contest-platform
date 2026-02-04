@@ -78,6 +78,7 @@ public
 # Temporary folders
 tmp/
 temp/
+runner-tmp/
 
 # Editor directories and files
 .vscode/*
