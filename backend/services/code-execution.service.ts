@@ -76,7 +76,7 @@ const RUNNER_IMAGES = {
 };
 
 const SUPPORTED_LANGUAGES = ["javascript", "typescript", "python", "java", "cpp", "c"];
-const DOCKER_OVERHEAD_MS = Number(process.env.CODE_RUNNER_OVERHEAD_MS || 1500);
+const DOCKER_OVERHEAD_MS = Number(process.env.CODE_RUNNER_OVERHEAD_MS || 5000);
 
 const RUNNERS: Record<string, RunnerConfig> = {
   javascript: {

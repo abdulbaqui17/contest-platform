@@ -246,14 +246,20 @@ router.post("/run", optionalAuth, async (req: Request, res: Response) => {
 
     // Return visible results only
     const visibleResults = result.testCaseResults.map((tc, index) => ({
+      testCaseId: tc.testCaseId,
       testCase: index + 1,
       input: tc.input,
+      expectedOutput: tc.expectedOutput,
+      actualOutput: tc.actualOutput,
+      passed: tc.passed,
+      executionTime: tc.executionTime,
+      memoryUsed: tc.memoryUsed,
+      error: tc.error,
+      // Backwards compatibility keys
       expected: tc.expectedOutput,
       actual: tc.actualOutput,
-      passed: tc.passed,
       time: Math.round(tc.executionTime),
       memory: Math.round(tc.memoryUsed * 10) / 10,
-      error: tc.error,
     }));
 
     res.json({
@@ -710,19 +716,13 @@ router.post("/code", authenticateToken, async (req: Request, res: Response) => {
   const { contestId } = req.body;
   
   if (contestId) {
-    // Forward to contest endpoint
-    return router.handle(
-      { ...req, url: "/contest", method: "POST" } as any,
-      res,
-      () => {}
-    );
+    // Redirect internally by modifying the URL and re-routing
+    req.url = "/contest";
+    return router(req, res, () => {});
   } else {
-    // Forward to practice endpoint
-    return router.handle(
-      { ...req, url: "/practice", method: "POST" } as any,
-      res,
-      () => {}
-    );
+    // Redirect internally by modifying the URL and re-routing
+    req.url = "/practice";
+    return router(req, res, () => {});
   }
 });
 

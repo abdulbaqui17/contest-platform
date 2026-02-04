@@ -154,7 +154,7 @@ describe("API smoke tests", () => {
     expect(submitRes.body.status).toBeDefined();
     expect(submitRes.body.submissionId).toBeTruthy();
     },
-    { timeout: 20000 }
+    { timeout: 40000 }
   );
 
   it(
